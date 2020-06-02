@@ -344,9 +344,9 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   if(newsz < oldsz)
     return oldsz;
 
-  if (p->pid > 2 && PGROUNDUP(newsz) / PGSIZE > MAX_TOTAL_PAGES) { // space needed is bigger than max num of pages
+  if (p->pid > 2 && (PGROUNDUP(newsz) - PGROUNDUP(oldsz))/ PGSIZE > MAX_TOTAL_PAGES) { // space needed is bigger than max num of pages
     // panic("alloc uvm: space needed is bigger than max num of pages");//todo:remove panic
-    cprintf("alloc uvm: space needed is bigger than max num of pages");
+    cprintf("alloc uvm: space requested(%d) is bigger than max allowed(%d)\n", PGROUNDUP(newsz) - PGROUNDUP(oldsz), PGSIZE * MAX_TOTAL_PAGES);
     return 0;
   }
 
@@ -601,8 +601,7 @@ handle_pf(void)
   if ((pte = walkpgdir(p->pgdir, (char*)va, 0)) == 0) {
     panic("handle_pf: walkdir failed\n");
   }
-  if ((*pte & PTE_PG) == 0) { // not paged out to secondary storage 
-    // cprintf("not paged out to secondary storage\n");
+  if ((*pte & PTE_PG) == 0) { // not paged out to secondary storage
     return 0;
   }
 

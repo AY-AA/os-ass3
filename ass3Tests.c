@@ -3,51 +3,87 @@
 #include "user.h"
 #include "fs.h"
 
+#define MAX_PSYC_PAGES 16
+#define MAX_TOTAL_PAGES 32
 #define PGSIZE 4096
-#define ARR_SIZE 55000
+#define BUFF_SIZE (PGSIZE * (MAX_TOTAL_PAGES - 1))
 
-/*
-	Test used to check the swapping machanism in fork.
-	Best tested when LIFO is used (for more swaps)
-*/
-void forkTest(){
-    printf(1, "forkTest started\n");
-  int i;
-  char * arr;
-  arr = malloc (50000); //allocates 13 pages (sums to 16), in lifo, OS puts page #15 in file.
+void swap_test(){
+  printf(1, "==================================\n");
+  printf(1, "Started swap and cow test\n\n");
+  int i, j1, j2, res = 1;
+
+  char *buffer;
+  char *expected_res_parent_1 = "11111111111111111111111111111111111111111111111111";
+  char *expected_res_parent_2 = "22222222222222222222222222222222222222222222222222";
+  char *expected_res_child_1 = "11111111111111111111111111111111111111113333333333";
+  char *expected_res_child_2 = "22222222222222222222222222222222222222224444444444";
+
+  buffer = malloc (BUFF_SIZE);
+
+  j1 = BUFF_SIZE-900;
+  j2 = BUFF_SIZE-800;
 
   for (i = 0; i < 50; i++) { 
-    arr[49100+i] = 'A'; //last six A's stored in page #16, the rest in #15
-    arr[45200+i] = 'B'; //all B's are stored in page #15.
+    buffer[j1 + i] = '1';
+    buffer[j2 + i] = '2';
   }
-  arr[49100+i] = 0; //for null terminating string...
-  arr[45200+i] = 0;
+  buffer[j1 + i] = 0;
+  buffer[j2 + i] = 0;
   
-  if (fork() == 0){ //is son
+  if (fork() == 0) {
     for (i = 40; i < 50; i++) { 
-	    arr[49100+i] = 'C'; //changes last ten A's to C
-	    arr[45200+i] = 'D'; //changes last ten B's to D
+	    buffer[j1 + i] = '3';
+	    buffer[j2 + i] = '4';
   	}
-    printf(1, "SON: %s\n",&arr[49100]); // should print AAAAA..CCC...
-    printf(1, "SON: %s\n",&arr[45200]); // should print BBBBB..DDD...
-  	printf(1,"\n");
-    free(arr);
+    if (strcmp(&buffer[j1], expected_res_child_1)) {
+      res = 0;
+      printf(1, "child failure:\nexpected: %s\nactual: %s\n", expected_res_child_1, &buffer[49100]);
+    }
+    if (strcmp(&buffer[j2], expected_res_child_2)) {
+      res = 0;
+      printf(1, "child failure:\nexpected: %s\nactual: %s\n", expected_res_child_2, &buffer[45200]);
+    }
+    free(buffer);
+    printf(1, "child result: %s\n", res ? "success" : "failure");
     exit();
-  } else { //is parent
+  } 
+  else { // parent
     wait();
-    printf(1, "PARENT: %s\n",&arr[49100]); // should print AAAAA...
-    printf(1, "PARENT: %s\n",&arr[45200]); // should print BBBBB...
-    arr[62123] = 'D'; // segmentation fault
-    free(arr);
+
+    if (strcmp(&buffer[j1], expected_res_parent_1)) {
+      res = 0;
+      printf(1, "parent failure:\nexpected: %s\nactual: %s\n", expected_res_parent_1, &buffer[49100]);
+    }
+    if (strcmp(&buffer[j2], expected_res_parent_2)) {
+      res = 0;
+      printf(1, "parent failure:\nexpected: %s\nactual: %s\n", expected_res_parent_2, &buffer[45200]);
+    }
+    printf(1, "parent result: %s\n", res ? "success" : "failure");
+    free(buffer);
   }
 
+  printf(1, "==================================\n");
 }
 
+void seg_fault_test(){
+  printf(1, "==================================\n");
+  printf(1, "Started seg fault test\n\n");
+
+  char *buffer;
+  buffer = malloc (BUFF_SIZE);
+  
+  printf(1, "should panic now...\n");
+  buffer[BUFF_SIZE + PGSIZE] = '5';
+  
+  printf(1, "test failed! should panic seg fault\n");
+  printf(1, "==================================\n");
+}
 
 static unsigned long int next = 1;
 int getRandNum() {
   next = next * 1103515245 + 12341;
-  return (unsigned int)(next/65536) % ARR_SIZE;
+  return (unsigned int)(next/65536) % BUFF_SIZE;
 }
 
 #define PAGE_NUM(addr) ((uint)(addr) & ~0xFFF)
@@ -69,7 +105,7 @@ void globalTest(){
 	char * arr;
 	int i;
 	int randNum;
-	arr = malloc(ARR_SIZE); //allocates 14 pages (sums to 17 - to allow more then one swapping in scfifo)
+	arr = malloc(BUFF_SIZE); //allocates 14 pages (sums to 17 - to allow more then one swapping in scfifo)
 	for (i = 0; i < TEST_POOL; i++) {
 		randNum = getRandNum();	//generates a pseudo random number between 0 and ARR_SIZE
 		while (PGSIZE*10-8 < randNum && randNum < PGSIZE*10+PGSIZE/2-8)
@@ -83,6 +119,7 @@ void globalTest(){
 
 int main(int argc, char *argv[]){
 //   globalTest();			//for testing each policy efficiency
-  forkTest();			//for testing swapping machanism in fork.
+  swap_test();
+  seg_fault_test();
   exit();
 }
