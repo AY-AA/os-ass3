@@ -66,7 +66,7 @@ dec_counter(uint v)
 }
 
 int
-free_pages()
+free_pages(void)
 {
   struct run *r;
   int free_p = 0;

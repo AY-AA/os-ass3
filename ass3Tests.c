@@ -9,9 +9,10 @@
 #define BUFF_SIZE (PGSIZE * (MAX_TOTAL_PAGES - 1))
 
 void swap_test(){
+  int i, j1, j2, res = 1;
   printf(1, "==================================\n");
   printf(1, "Started swap and cow test\n\n");
-  int i, j1, j2, res = 1;
+  printf(1,"free pages: %d\n", getNumberOfFreePages());
 
   char *buffer;
   char *expected_res_parent_1 = "11111111111111111111111111111111111111111111111111";
@@ -38,11 +39,11 @@ void swap_test(){
   	}
     if (strcmp(&buffer[j1], expected_res_child_1)) {
       res = 0;
-      printf(1, "child failure:\nexpected: %s\nactual: %s\n", expected_res_child_1, &buffer[49100]);
+      printf(1, "child: failure:\nexpected: %s\nactual: %s\n", expected_res_child_1, &buffer[j1]);
     }
     if (strcmp(&buffer[j2], expected_res_child_2)) {
       res = 0;
-      printf(1, "child failure:\nexpected: %s\nactual: %s\n", expected_res_child_2, &buffer[45200]);
+      printf(1, "child: failure:\nexpected: %s\nactual: %s\n", expected_res_child_2, &buffer[j2]);
     }
     free(buffer);
     printf(1, "child result: %s\n", res ? "success" : "failure");
@@ -53,16 +54,17 @@ void swap_test(){
 
     if (strcmp(&buffer[j1], expected_res_parent_1)) {
       res = 0;
-      printf(1, "parent failure:\nexpected: %s\nactual: %s\n", expected_res_parent_1, &buffer[49100]);
+      printf(1, "parent: failure:\nexpected: %s\nactual: %s\n", expected_res_parent_1, &buffer[j1]);
     }
     if (strcmp(&buffer[j2], expected_res_parent_2)) {
       res = 0;
-      printf(1, "parent failure:\nexpected: %s\nactual: %s\n", expected_res_parent_2, &buffer[45200]);
+      printf(1, "parent: failure:\nexpected: %s\nactual: %s\n", expected_res_parent_2, &buffer[j2]);
     }
-    printf(1, "parent result: %s\n", res ? "success" : "failure");
     free(buffer);
+    printf(1, "parent: result: %s\n", res ? "success" : "failure");
   }
 
+  printf(1,"free pages: %d\n", getNumberOfFreePages());
   printf(1, "==================================\n");
 }
 

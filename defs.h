@@ -56,6 +56,7 @@ int				createSwapFile(struct proc* p);
 int				readFromSwapFile(struct proc * p, char* buffer, uint placeOnFile, uint size);
 int				writeToSwapFile(struct proc* p, char* buffer, uint placeOnFile, uint size);
 int				removeSwapFile(struct proc* p);
+int             free_pages(void);
 
 // sysfile
 struct inode*	create(char *path, short type, short major, short minor);
