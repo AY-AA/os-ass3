@@ -9,6 +9,7 @@
 #include "mmu.h"
 #include "spinlock.h"
 
+int free_pages_counter = PHYSTOP / PGSIZE;
 void freerange(void *vstart, void *vend);
 extern char end[]; // first address after kernel loaded from ELF file
                    // defined by the kernel linker script in kernel.ld
@@ -68,22 +69,23 @@ dec_counter(uint v)
 int
 free_pages(void)
 {
-  struct run *r;
-  int free_p = 0;
+  // struct run *r;
+  // int free_p = 0;
 
-  if(kmem.use_lock)
-    acquire(&kmem.lock);
+  // if(kmem.use_lock)
+  //   acquire(&kmem.lock);
 
-  r = kmem.freelist;
-  while (r) {
-    free_p++;
-    r = r->next;
-  }
+  // r = kmem.freelist;
+  // while (r) {
+  //   free_p++;
+  //   r = r->next;
+  // }
 
-  if(kmem.use_lock)
-    release(&kmem.lock);
+  // if(kmem.use_lock)
+  //   release(&kmem.lock);
 
-  return free_p;
+  // return free_p;
+  return free_pages_counter;
 }
 
 
@@ -150,6 +152,7 @@ kfree(char *v)
   r = (struct run*)v;
   r->next = kmem.freelist;
   kmem.freelist = r;
+  free_pages_counter ++;
   if(kmem.use_lock)
     release(&kmem.lock);
 }
@@ -170,6 +173,7 @@ kalloc(void)
   if(r) {
     kmem.freelist = r->next;
     kmem.references_count[V2P(r) >> PTXSHIFT] = 1;
+    free_pages_counter --;
   }
 
   if(kmem.use_lock)

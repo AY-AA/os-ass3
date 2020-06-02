@@ -3,22 +3,35 @@
 #include "user.h"
 #include "fs.h"
 
+#define IGNORE_PGS 2
 #define MAX_PSYC_PAGES 16
 #define MAX_TOTAL_PAGES 32
 #define PGSIZE 4096
-#define BUFF_SIZE (PGSIZE * (MAX_TOTAL_PAGES - 1))
+#define BUFF_SIZE (PGSIZE * (MAX_TOTAL_PAGES - (IGNORE_PGS+1)))
+
+void test_number_of_pages(int expected) {
+  int actual = getNumberOfFreePages();
+  printf(1,"free pages test: ");
+  if (actual == expected) {
+    printf(1, "success\n");
+  }
+  else {
+    printf(1, "failed\nexpected: %d\nactual: %d\n", expected, actual);
+  }
+}
 
 void swap_test(){
-  int i, j1, j2, res = 1;
+  int i, j1, j2, res = 1, expected_free_pages, num_of_free_pages = getNumberOfFreePages();
   printf(1, "==================================\n");
   printf(1, "Started swap and cow test\n\n");
-  printf(1,"free pages: %d\n", getNumberOfFreePages());
+  printf(1,"free pages: %d\n", num_of_free_pages);
 
   char *buffer;
   char *expected_res_parent_1 = "11111111111111111111111111111111111111111111111111";
   char *expected_res_parent_2 = "22222222222222222222222222222222222222222222222222";
   char *expected_res_child_1 = "11111111111111111111111111111111111111113333333333";
   char *expected_res_child_2 = "22222222222222222222222222222222222222224444444444";
+  expected_free_pages = num_of_free_pages - MAX_PSYC_PAGES + IGNORE_PGS;
 
   buffer = malloc (BUFF_SIZE);
 
@@ -45,7 +58,10 @@ void swap_test(){
       res = 0;
       printf(1, "child: failure:\nexpected: %s\nactual: %s\n", expected_res_child_2, &buffer[j2]);
     }
+    // printf(1,"child: free pages:\n");
+    // printf(1,"before free(buffer): %d\n", getNumberOfFreePages());
     free(buffer);
+    // printf(1,"after free(buffer): %d\n", getNumberOfFreePages());
     printf(1, "child result: %s\n", res ? "success" : "failure");
     exit();
   } 
@@ -60,11 +76,15 @@ void swap_test(){
       res = 0;
       printf(1, "parent: failure:\nexpected: %s\nactual: %s\n", expected_res_parent_2, &buffer[j2]);
     }
+    // printf(1, "parent: free pages:\n");
+    // printf(1, "before free(buffer): %d\n", getNumberOfFreePages());
     free(buffer);
+    // printf(1, "after free(buffer): %d\n", getNumberOfFreePages());
     printf(1, "parent: result: %s\n", res ? "success" : "failure");
   }
 
-  printf(1,"free pages: %d\n", getNumberOfFreePages());
+  test_number_of_pages(expected_free_pages);
+
   printf(1, "==================================\n");
 }
 
