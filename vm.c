@@ -224,11 +224,100 @@ find_pa(pde_t *pgdir, int va)
   return !pte ? -1 : PTE_ADDR(*pte);
 }
 
+int
+check_policy()
+{
+  #if NONE
+		return 0;
+	#endif
+	return 1;
+}
+
+int
+NFUA_next(struct proc *p)
+{
+  cprintf("NFUA_next\n");
+  p->r_robin++;
+  return p->r_robin%MAX_PSYC_PAGES;
+}
+
+int
+LAPA_next(struct proc *p)
+{
+  cprintf("LAPA_next\n");
+  p->r_robin++;
+  return p->r_robin%MAX_PSYC_PAGES;
+}
+
+int
+SCFIFO_next(struct proc *p)
+{
+  // return 13;
+  int i, next_i = -1;
+  pte_t *pte;
+  uint min_timestap = 4294967295;
+
+  // find oldest
+  for (i = 0; i < MAX_PSYC_PAGES ; i++) {
+    if (p->memory_pages[i].is_used && p->memory_pages[i].time_loaded <= min_timestap) {
+      next_i = i;
+      min_timestap = p->memory_pages[i].time_loaded;
+    }
+  }
+
+  if (next_i == -1)
+    panic("SCFIFO: next i == -1\n");
+
+  if ((pte = walkpgdir(p->memory_pages[next_i].pgdir, (char*)p->memory_pages[next_i].va, 0)) == 0)
+    panic("SCFIFO: walkpgdir failed\n");
+    
+  if (*pte & PTE_A) { // will get 2nd chance
+    *pte &= ~PTE_A;
+    p->memory_pages[next_i].time_loaded = p->timestamp++;
+    next_i = -1;
+  }
+  return next_i;
+}
+
+int
+AQ_next(struct proc *p)
+{
+  p->r_robin++;
+  return p->r_robin%MAX_PSYC_PAGES;
+}
+
 // find next page to remove from memory
 int
 next_i_in_mem_to_remove(struct proc *p)
 {
-  return 0;
+  int next_i = -1;
+  #if NFUA
+    do {
+      cprintf("NFUA!\n");
+      next_i = NFUA_next(p);
+    } while(next_i == -1);
+  #elif LAPA
+    do {
+      cprintf("LAPA!\n");
+      next_i = LAPA_next(p);
+    } while(next_i == -1);
+  #elif SCFIFO
+    do {
+      next_i = SCFIFO_next(p);
+      // cprintf("SCFIFO: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
+    } while(next_i == -1);
+  #elif AQ
+    do {
+      next_i = AQ_next(p);
+      if (next_i == -1)
+        cprintf("AQ: -1\n");
+      else
+        cprintf("AQ: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].timestamp, p->memory_pages[next_i].va);
+    } while(next_i == -1);
+  #endif
+  if (next_i == -1)
+    panic("next i == -1\n");
+  return next_i;
 }
 
 // find free space in ram
@@ -344,7 +433,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   if(newsz < oldsz)
     return oldsz;
 
-  if (p->pid > 2 && (PGROUNDUP(newsz) - PGROUNDUP(oldsz))/ PGSIZE > MAX_TOTAL_PAGES) { // space needed is bigger than max num of pages
+  if (check_policy() && p->pid > 2 && (PGROUNDUP(newsz) - PGROUNDUP(oldsz))/ PGSIZE > MAX_TOTAL_PAGES) { // space needed is bigger than max num of pages
     // panic("alloc uvm: space needed is bigger than max num of pages");//todo:remove panic
     cprintf("alloc uvm: space requested(%d) is bigger than max allowed(%d)\n", PGROUNDUP(newsz) - PGROUNDUP(oldsz), PGSIZE * MAX_TOTAL_PAGES);
     return 0;
@@ -366,15 +455,13 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       return 0;
     }
     
-    next_free_i_mem = next_free_i_in_mem(p);
-    if (p->pid > 2 && next_free_i_mem == -1) {
-      next_free_i_mem = swap(p);
-    }
-
-    if (p->pid > 2) {
+    if (check_policy() && p->pid > 2) {
+      next_free_i_mem = next_free_i_in_mem(p);
+      next_free_i_mem = next_free_i_mem == -1 ? swap(p) : next_free_i_mem;
       p->memory_pages[next_free_i_mem].pgdir = pgdir;
       p->memory_pages[next_free_i_mem].is_used = 1;
       p->memory_pages[next_free_i_mem].va = a;
+      p->memory_pages[next_free_i_mem].time_loaded = p->timestamp++;
     }
   }
   return newsz;
@@ -407,14 +494,14 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
         panic("kfree");
       char *v = P2V(pa);
       kfree(v);
-      // if (p != 0) {
+      if (check_policy()) {
         for (i = 0; i < MAX_PSYC_PAGES; i++) {
           if (//p->memory_pages[i].is_used && 
               p->memory_pages[i].pgdir == pgdir && p->memory_pages[i].va == a) {
             p->memory_pages[i].is_used = 0;
             break;
           }
-        // }
+        }
       }
       *pte = 0;
     }
@@ -463,18 +550,18 @@ copyuvm(pde_t *pgdir, uint sz)
   pte_t *pte;
   uint pa, i, flags;
   char *mem;
-  struct proc *p = myproc();
+  // struct proc *p = myproc();
 
   if((d = setupkvm()) == 0)
     return 0;
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
-    if(*pte & PTE_PG) {
-      set_page_flags_in_disk(d, i);
-      lcr3(V2P(p->pgdir));
-      continue;
-    }
+    // if(*pte & PTE_PG) {
+    //   set_page_flags_in_disk(d, i);
+    //   lcr3(V2P(p->pgdir));
+    //   continue;
+    // }
     if(!(*pte & PTE_P))
       panic("copyuvm: page not present");
     pa = PTE_ADDR(*pte);
@@ -630,6 +717,8 @@ handle_pf(void)
 
   p->memory_pages[new_page_i_in_mem] = p->file_pages[i_of_rounded_va];
   p->file_pages[i_of_rounded_va].is_used = 0;
+  p->memory_pages[new_page_i_in_mem].time_loaded = p->timestamp++;
+  // p->memory_pages[new_page_i_in_mem].is_used = 1;
 
   if (is_need_swap) {
     old_pa = find_pa(old_page.pgdir, old_page.va);

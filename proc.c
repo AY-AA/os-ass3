@@ -88,6 +88,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->timestamp = 0;
 
   release(&ptable.lock);
 
@@ -105,7 +106,7 @@ found:
   // Page support
   p->swapFile = 0;
   p->page_faults = 0;
-  if (p->pid > 2 && createSwapFile(p) != 0)     // ignore shell & init procs
+  if (check_policy() && p->pid > 2 && createSwapFile(p) != 0)     // ignore shell & init procs
     panic("allocproc: createSwapFile failed\n");
   
 
@@ -199,9 +200,16 @@ fork(void)
   }
 
   // Copy process state from proc.
-  // if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
-    // cprintf("fork: copyuvm failed\n");
-  if((np->pgdir = copyonwriteuvm(curproc->pgdir, curproc->sz)) == 0){
+  if (!check_policy()) {      // NONE
+    if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+      cprintf("fork: copyuvm failed\n");
+      kfree(np->kstack);
+      np->kstack = 0;
+      np->state = UNUSED;
+      return -1;
+    }
+  }
+  else if((np->pgdir = copyonwriteuvm(curproc->pgdir, curproc->sz)) == 0){
     cprintf("fork: copyonwriteuvm failed\n");
     kfree(np->kstack);
     np->kstack = 0;
@@ -212,11 +220,12 @@ fork(void)
   np->parent = curproc;
   *np->tf = *curproc->tf;
   np->page_faults = 0;
+  np->timestamp = curproc->timestamp;
 
   // The forked process should have its own swap file 
   // whose initial content is
   // identical to the parent's swap file
-  if (curproc->pid > 2) {
+  if (check_policy() && curproc->pid > 2) {
     for(i = 0; i < MAX_PSYC_PAGES; i++) {
       np->memory_pages[i] = curproc->memory_pages[i];
       np->memory_pages[i].pgdir = np->pgdir;
@@ -273,7 +282,7 @@ exit(void)
     }
   }
 
-  if (curproc->pid > 2)
+  if (check_policy() && curproc->pid > 2)
     removeSwapFile(curproc);
 
   begin_op();
@@ -325,9 +334,11 @@ wait(void)
         p->kstack = 0;
         freevm(p->pgdir);
         p->pid = 0;
-        for (i = 0; i < MAX_PSYC_PAGES; i++) {
-          p->memory_pages[i].is_used = 0;
-          p->file_pages[i].is_used = 0;
+        if (check_policy()) {
+          for (i = 0; i < MAX_PSYC_PAGES; i++) {
+            p->memory_pages[i].is_used = 0;
+            p->file_pages[i].is_used = 0;
+          }
         }
         p->parent = 0;
         p->name[0] = 0;

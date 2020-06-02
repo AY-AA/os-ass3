@@ -94,11 +94,13 @@ exec(char *path, char **argv)
   safestrcpy(curproc->name, last, sizeof(curproc->name));
 
   // Commit to the user image.
-  for (i=0; i < MAX_PSYC_PAGES; i++) {
-    if (curproc->memory_pages[i].is_used)
-      curproc->memory_pages[i].pgdir = pgdir;
-    if (curproc->file_pages[i].is_used)
-      curproc->file_pages[i].pgdir = pgdir; 
+  if (check_policy()) {
+      for (i=0; i < MAX_PSYC_PAGES; i++) {
+      if (curproc->memory_pages[i].is_used)
+        curproc->memory_pages[i].pgdir = pgdir;
+      if (curproc->file_pages[i].is_used)
+        curproc->file_pages[i].pgdir = pgdir; 
+    }
   }
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
