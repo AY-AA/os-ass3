@@ -77,6 +77,10 @@ char*           kalloc(void);
 void            kfree(char*);
 void            kinit1(void*, void*);
 void            kinit2(void*, void*);
+int             get_ref_counter(uint);
+void            dec_counter(uint);
+void            inc_counter(uint);
+void            set_counter(uint, int i);
 
 // kbd.c
 void            kbdintr(void);
@@ -190,19 +194,13 @@ void            freevm(pde_t*);
 void            inituvm(pde_t*, char*, uint);
 int             loaduvm(pde_t*, char*, struct inode*, uint, uint);
 pde_t*          copyuvm(pde_t*, uint);
+pde_t*          copyonwriteuvm(pde_t*, uint);
 void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
 int             handle_pf(void);
+int             handle_cow(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
-
-#define CHECK_BIT(var,pos)  ((var) & 1<< (pos))
-#define CLEAR_BIT(var,pos)  ((var) ^= 1U << (pos))
-#define SET_BIT(var,pos)    ((var) |= 1U << (pos))
-
-#define OR(var1,var2)   ((var1) |= (var2))
-#define AND(var1,var2)  ((var1) &= (var2))
-

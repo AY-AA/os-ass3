@@ -78,12 +78,12 @@ trap(struct trapframe *tf)
     lapiceoi();
     break;
   case T_PGFLT:
-    if (myproc()->pid <= 2)   // shell or init proc
-      cprintf("T_PGFLT, pid <= 2\n");
-      // panic("trap: segmentation fault: pid <= 2\n");    // todo: panic or break?
-    else if (handle_pf() == -1)
-      cprintf("T_PGFLT, handle_pf() == -1\n");
-      // panic("trap: segmentation fault\n");              // todo: panic or break?
+    if (myproc()->pid > 2 && handle_pf())
+      break;
+    else if (handle_cow())
+      break;
+    else if (myproc()->pid > 2)
+      panic("trap: segmentation fault\n");
     break;
   //PAGEBREAK: 13
   default:

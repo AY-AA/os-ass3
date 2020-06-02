@@ -471,7 +471,6 @@ copyuvm(pde_t *pgdir, uint sz)
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
     if(*pte & PTE_PG) {
-      cprintf("if(*pte & PTE_PG)\n");
       set_page_flags_in_disk(d, i);
       lcr3(V2P(p->pgdir));
       continue;
@@ -492,6 +491,48 @@ copyuvm(pde_t *pgdir, uint sz)
 
 bad:
   freevm(d);
+  return 0;
+}
+
+pde_t*
+copyonwriteuvm(pde_t *pgdir, uint sz)
+{
+  pde_t *d;
+  pte_t *pte;
+  uint pa, i, flags;
+  struct proc *p = myproc();
+
+  // if (p->pid <= 2)
+  //   return copyuvm(pgdir, sz);
+
+  if((d = setupkvm()) == 0)
+    return 0;
+  for(i = 0; i < sz; i += PGSIZE){
+    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
+      panic("copyonwriteuvm: pte should exist");
+    if(*pte & PTE_PG) {
+      set_page_flags_in_disk(d, i);
+      lcr3(V2P(p->pgdir));
+      continue;
+    }
+    if(!(*pte & PTE_P))
+      panic("copyonwriteuvm: page not present");
+
+
+    *pte |= PTE_COW;    // copy on write
+    *pte &= ~PTE_W;     // pte is NOT writable -> need to handle in trap!
+    pa = PTE_ADDR(*pte);
+    flags = PTE_FLAGS(*pte);
+
+    inc_counter(pa);
+    if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0)
+      goto bad;
+  }
+  lcr3(V2P(p->pgdir));
+  return d;
+
+bad:
+  panic("copyonwriteuvm: should not happen\n");
   return 0;
 }
 
@@ -548,7 +589,7 @@ static char buffer[PGSIZE];
 int
 handle_pf(void) 
 {
-  cprintf("handle_pf\n");
+  // cprintf("handle_pf ");
   struct page old_page;
   uint old_pa, va, va_rounded;
   int new_page_i_in_mem, new_page_i_in_file, i_of_rounded_va, is_need_swap;
@@ -557,9 +598,12 @@ handle_pf(void)
   struct proc *p = myproc();
 
   va = rcr2();
-  pte = walkpgdir(p->pgdir, (char*)va, 0);
+  if ((pte = walkpgdir(p->pgdir, (char*)va, 0)) == 0) {
+    panic("handle_pf: walkdir failed\n");
+  }
   if ((*pte & PTE_PG) == 0) { // not paged out to secondary storage 
-    return -1;
+    // cprintf("not paged out to secondary storage\n");
+    return 0;
   }
 
   p->page_faults++;
@@ -580,10 +624,10 @@ handle_pf(void)
 
   i_of_rounded_va = get_i_of_va_in_file(p, va_rounded);
   if (i_of_rounded_va == -1)
-    return -1;
+    panic("handle PF: cannot find rounded VA\n");
   
   if (readFromSwapFile(p, buffer, i_of_rounded_va*PGSIZE, PGSIZE) != PGSIZE)
-    return -1;
+    panic("handle PF: readFromSwapFile failed\n");
 
   p->memory_pages[new_page_i_in_mem] = p->file_pages[i_of_rounded_va];
   p->file_pages[i_of_rounded_va].is_used = 0;
@@ -592,7 +636,7 @@ handle_pf(void)
     old_pa = find_pa(old_page.pgdir, old_page.va);
     new_page_i_in_file = next_free_i_in_file(p);
     if (writeToSwapFile(p, (char*)old_page.va, new_page_i_in_file*PGSIZE, PGSIZE) == -1)
-      return -1;
+      panic("handle PF: writeToSwapFile failed\n");
     
     p->file_pages[new_page_i_in_file].is_used = 1;
     p->file_pages[new_page_i_in_file].pgdir = old_page.pgdir;
@@ -608,5 +652,53 @@ handle_pf(void)
   else
     memmove((char*)va_rounded, buffer, PGSIZE);
 
+  return 1;
+}
+
+
+int
+handle_cow(void) 
+{
+  uint va, pa;
+  char *mem;
+  pte_t *pte;
+  struct proc *p = myproc();
+
+  // cprintf("handling cow: ");
+
+  va = rcr2();
+  pte = walkpgdir(p->pgdir, (char*)va, 0);
+  if ((pte = walkpgdir(p->pgdir, (char*)va, 0)) == 0) {
+    panic("handle_pf: walkdir failed\n");
+  }
+  if ((*pte & PTE_W) || !(*pte & PTE_COW)) { // not COW or writable
+    // cprintf("NOT cow\n");
+    return 0;
+  }
+
+  pa = PTE_ADDR(*pte);
+
+  if (get_ref_counter(pa) > 1) {  // handling copy
+    if((mem = kalloc()) == 0) {
+      panic("COW: kalloc failed\n");
+    }
+
+    // cprintf("[%x]: (refs: %d) | ",pa, get_ref_counter(pa));
+    memmove(mem, (char*)P2V(pa), PGSIZE);
+    // cprintf("[%x]: new mem: %d | ", V2P(mem), get_ref_counter(V2P(mem)));
+
+    dec_counter(pa);
+    // cprintf("[%x]: dec to: %d\n", pa, get_ref_counter(pa));
+
+    *pte &= ~PTE_COW;     // not COW anymore
+    *pte = V2P(mem) | PTE_P | PTE_U | PTE_W;
+  }
+  else {  // remove flags
+    // cprintf("[%x]: NOT > 1, (refs: %d)\n",pa, get_ref_counter(pa));
+    *pte &= ~PTE_COW;     // not COW anymore
+    *pte |= PTE_W;
+  }
+
+  lcr3(V2P(p->pgdir));
   return 1;
 }

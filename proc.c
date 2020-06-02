@@ -199,8 +199,10 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
-    cprintf("fork: copyuvm failed\n");
+  // if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+    // cprintf("fork: copyuvm failed\n");
+  if((np->pgdir = copyonwriteuvm(curproc->pgdir, curproc->sz)) == 0){
+    cprintf("fork: copyonwriteuvm failed\n");
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;

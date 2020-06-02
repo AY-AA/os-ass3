@@ -21,7 +21,71 @@ struct {
   struct spinlock lock;
   int use_lock;
   struct run *freelist;
+  uint references_count[PHYSTOP >> PTXSHIFT];
 } kmem;
+
+void
+set_counter(uint v, int i)
+{
+  acquire(&kmem.lock);
+  kmem.references_count[v >> PTXSHIFT] = i;
+  // ((struct run*)v)->ref_count = 1;
+  // cprintf("get_ref_counter : %x: %d\n",v,counter);
+  release(&kmem.lock);
+}
+
+int
+get_ref_counter(uint v)
+{
+  int counter;
+  acquire(&kmem.lock);
+  counter = kmem.references_count[v >> PTXSHIFT];
+  // counter = ((struct run*)v)->ref_count;
+  // cprintf("get_ref_counter original: %x, deref: %x, value: %d\n",v, (int)*v, kmem.references_count[(int)*v]);
+  release(&kmem.lock);
+  return counter;
+}
+
+
+void
+inc_counter(uint v)
+{
+  acquire(&kmem.lock);
+  // cprintf("[%x] increased from: %d ", v, kmem.references_count[v >> PTXSHIFT]);
+  kmem.references_count[v >> PTXSHIFT]++;
+  // cprintf("to: %d\n", kmem.references_count[v >> PTXSHIFT]);
+  release(&kmem.lock);
+}
+
+void
+dec_counter(uint v)
+{
+  acquire(&kmem.lock);
+  kmem.references_count[v >> PTXSHIFT]--;
+  release(&kmem.lock);
+}
+
+int
+free_pages()
+{
+  struct run *r;
+  int free_p = 0;
+
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
+
+  r = kmem.freelist;
+  while (r) {
+    free_p++;
+    r = r->next;
+  }
+
+  if(kmem.use_lock)
+    release(&kmem.lock);
+
+  return free_p;
+}
+
 
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
@@ -43,13 +107,16 @@ kinit2(void *vstart, void *vend)
   kmem.use_lock = 1;
 }
 
+
 void
 freerange(void *vstart, void *vend)
 {
   char *p;
   p = (char*)PGROUNDUP((uint)vstart);
-  for(; p + PGSIZE <= (char*)vend; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)vend; p += PGSIZE) {
+    kmem.references_count[V2P(p) >> PTXSHIFT] = 0;
     kfree(p);
+  }
 }
 //PAGEBREAK: 21
 // Free the page of physical memory pointed at by v,
@@ -64,17 +131,30 @@ kfree(char *v)
   if((uint)v % PGSIZE || v < end || V2P(v) >= PHYSTOP)
     panic("kfree");
 
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
+
+  if (kmem.references_count[V2P(v) >> PTXSHIFT] > 0) {
+    kmem.references_count[V2P(v) >> PTXSHIFT] --;
+    // cprintf("kfree: [%x]: (refs:%d)\n", v, kmem.references_count[V2P(v) >> PTXSHIFT]);
+  }
+
+  if (kmem.references_count[V2P(v) >> PTXSHIFT] != 0) {
+    if(kmem.use_lock)
+      release(&kmem.lock);
+    return;
+  }
   // Fill with junk to catch dangling refs.
   memset(v, 1, PGSIZE);
 
-  if(kmem.use_lock)
-    acquire(&kmem.lock);
   r = (struct run*)v;
   r->next = kmem.freelist;
   kmem.freelist = r;
   if(kmem.use_lock)
     release(&kmem.lock);
 }
+
+
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
@@ -83,12 +163,15 @@ char*
 kalloc(void)
 {
   struct run *r;
-
+  // cprintf("HERE\n");
   if(kmem.use_lock)
     acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
     kmem.freelist = r->next;
+    kmem.references_count[V2P(r) >> PTXSHIFT] = 1;
+  }
+
   if(kmem.use_lock)
     release(&kmem.lock);
   return (char*)r;
