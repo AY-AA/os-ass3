@@ -95,6 +95,8 @@ exec(char *path, char **argv)
 
   // Commit to the user image.
   if (check_policy()) {
+      // removeSwapFile(curproc);
+      // createSwapFile(curproc);
       for (i=0; i < MAX_PSYC_PAGES; i++) {
       if (curproc->memory_pages[i].is_used)
         curproc->memory_pages[i].pgdir = pgdir;

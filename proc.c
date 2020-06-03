@@ -73,6 +73,7 @@ myproc(void) {
 static struct proc*
 allocproc(void)
 {
+  int i;
   struct proc *p;
   char *sp;
 
@@ -88,7 +89,6 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-  p->timestamp = 0;
 
   release(&ptable.lock);
 
@@ -105,10 +105,17 @@ found:
 
   // Page support
   p->swapFile = 0;
+  p->timestamp = 0;
   p->page_faults = 0;
   if (check_policy() && p->pid > 2 && createSwapFile(p) != 0)     // ignore shell & init procs
     panic("allocproc: createSwapFile failed\n");
   
+  if (check_policy()) {
+    for (i = 0; i < MAX_PSYC_PAGES; i++) {
+      p->memory_pages[i].is_used = 0;
+      p->file_pages[i].is_used = 0;
+    }
+  }
 
   // Set up new context to start executing at forkret,
   // which returns to trapret.
@@ -227,16 +234,19 @@ fork(void)
   // identical to the parent's swap file
   if (check_policy() && curproc->pid > 2) {
     for(i = 0; i < MAX_PSYC_PAGES; i++) {
-      np->memory_pages[i] = curproc->memory_pages[i];
-      np->memory_pages[i].pgdir = np->pgdir;
-      np->file_pages[i] = curproc->file_pages[i];
-      np->file_pages[i].pgdir = np->pgdir;
-
-    
       if (curproc->file_pages[i].is_used && readFromSwapFile(curproc, fork_buffer, PGSIZE*i, PGSIZE) != PGSIZE)
         panic("fork: readFromSwapFile != PGSIZE\n");
       if (curproc->file_pages[i].is_used && writeToSwapFile(np, fork_buffer, PGSIZE*i, PGSIZE) != PGSIZE)
         panic("fork: writeToSwapFile != PGSIZE\n");
+
+      // np->memory_pages[i] = curproc->memory_pages[i];
+      np->memory_pages[i].is_used = curproc->memory_pages[i].is_used;
+      np->memory_pages[i].va = curproc->memory_pages[i].va;
+      np->memory_pages[i].pgdir = np->pgdir;
+      // np->file_pages[i] = curproc->file_pages[i];
+      np->file_pages[i].is_used = curproc->file_pages[i].is_used;
+      np->file_pages[i].va = curproc->file_pages[i].va;
+      np->file_pages[i].pgdir = np->pgdir;
     }
   }
 
@@ -282,8 +292,8 @@ exit(void)
     }
   }
 
-  if (check_policy() && curproc->pid > 2)
-    removeSwapFile(curproc);
+  if (check_policy() && curproc->pid > 2 && removeSwapFile(curproc) == -1)
+    panic("exit: removeSwapFile failed!\n");
 
   begin_op();
   iput(curproc->cwd);

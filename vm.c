@@ -252,7 +252,6 @@ LAPA_next(struct proc *p)
 int
 SCFIFO_next(struct proc *p)
 {
-  // return 13;
   int i, next_i = -1;
   pte_t *pte;
   uint min_timestap = 4294967295;
@@ -304,7 +303,7 @@ next_i_in_mem_to_remove(struct proc *p)
   #elif SCFIFO
     do {
       next_i = SCFIFO_next(p);
-      // cprintf("SCFIFO: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
+      cprintf("SCFIFO: [PID: %d] i selected: %d, timestamp: %d, va: %x\n", p->pid, next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #elif AQ
     do {
@@ -589,9 +588,6 @@ copyonwriteuvm(pde_t *pgdir, uint sz)
   uint pa, i, flags;
   struct proc *p = myproc();
 
-  // if (p->pid <= 2)
-  //   return copyuvm(pgdir, sz);
-
   if((d = setupkvm()) == 0)
     return 0;
   for(i = 0; i < sz; i += PGSIZE){
@@ -685,15 +681,17 @@ handle_pf(void)
   struct proc *p = myproc();
 
   va = rcr2();
+  va_rounded = PGROUNDDOWN(va);
+  cprintf("handle_pf: va: %x, va_rounded: %x\n", va, va_rounded);
+
   if ((pte = walkpgdir(p->pgdir, (char*)va, 0)) == 0) {
     panic("handle_pf: walkdir failed\n");
   }
-  if ((*pte & PTE_PG) == 0) { // not paged out to secondary storage
+  if ((*pte & PTE_P) || !(*pte & PTE_PG)) { // present or not paged out to secondary storage
     return 0;
   }
 
   p->page_faults++;
-  va_rounded = PGROUNDDOWN(va);
   pa = kalloc();
 
   new_page_i_in_mem = next_free_i_in_mem(p);
@@ -702,18 +700,24 @@ handle_pf(void)
   if (new_page_i_in_mem == -1) {
     is_need_swap = 1;
     new_page_i_in_mem = next_i_in_mem_to_remove(p);
+    cprintf("handle_pf: next_i_in_mem_to_remove = %d\n", new_page_i_in_mem);
   }
   
   old_page = p->memory_pages[new_page_i_in_mem];
   set_page_flags_in_mem(p->pgdir, va_rounded, V2P(pa));
   lcr3(V2P(p->pgdir));      // flush changes
 
+  cprintf("handle_pf: here1\n");
+
   i_of_rounded_va = get_i_of_va_in_file(p, va_rounded);
+   cprintf("handle_pf: here2\n");
   if (i_of_rounded_va == -1)
     panic("handle PF: cannot find rounded VA\n");
+  cprintf("handle_pf: here3\n");
   
   if (readFromSwapFile(p, buffer, i_of_rounded_va*PGSIZE, PGSIZE) != PGSIZE)
     panic("handle PF: readFromSwapFile failed\n");
+  cprintf("handle_pf: here4\n");
 
   p->memory_pages[new_page_i_in_mem] = p->file_pages[i_of_rounded_va];
   p->file_pages[i_of_rounded_va].is_used = 0;
@@ -721,6 +725,7 @@ handle_pf(void)
   // p->memory_pages[new_page_i_in_mem].is_used = 1;
 
   if (is_need_swap) {
+    cprintf("handle_pf: here5\n");
     old_pa = find_pa(old_page.pgdir, old_page.va);
     new_page_i_in_file = next_free_i_in_file(p);
     if (writeToSwapFile(p, (char*)old_page.va, new_page_i_in_file*PGSIZE, PGSIZE) == -1)
@@ -757,7 +762,7 @@ handle_cow(void)
   va = rcr2();
   pte = walkpgdir(p->pgdir, (char*)va, 0);
   if ((pte = walkpgdir(p->pgdir, (char*)va, 0)) == 0) {
-    panic("handle_pf: walkdir failed\n");
+    panic("handle_cow: walkdir failed\n");
   }
   if ((*pte & PTE_W) || !(*pte & PTE_COW)) { // not COW or writable
     // cprintf("NOT cow\n");
