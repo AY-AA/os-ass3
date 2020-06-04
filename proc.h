@@ -65,7 +65,7 @@ struct proc {
   struct page memory_pages[MAX_PSYC_PAGES];
   uint page_faults;
   uint timestamp;
-  uint r_robin;
+  uint r_robin;     //temp
 };
 
 // Process memory is laid out contiguously, low addresses first:

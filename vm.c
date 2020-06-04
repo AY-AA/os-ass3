@@ -258,7 +258,7 @@ SCFIFO_next(struct proc *p)
 
   // find oldest
   for (i = 0; i < MAX_PSYC_PAGES ; i++) {
-    if (p->memory_pages[i].is_used && p->memory_pages[i].time_loaded <= min_timestap) {
+    if (p->memory_pages[i].is_used && p->memory_pages[i].time_loaded < min_timestap) {
       next_i = i;
       min_timestap = p->memory_pages[i].time_loaded;
     }
@@ -700,24 +700,20 @@ handle_pf(void)
   if (new_page_i_in_mem == -1) {
     is_need_swap = 1;
     new_page_i_in_mem = next_i_in_mem_to_remove(p);
+    old_page = p->memory_pages[new_page_i_in_mem];
     cprintf("handle_pf: next_i_in_mem_to_remove = %d\n", new_page_i_in_mem);
   }
   
-  old_page = p->memory_pages[new_page_i_in_mem];
   set_page_flags_in_mem(p->pgdir, va_rounded, V2P(pa));
   lcr3(V2P(p->pgdir));      // flush changes
 
-  cprintf("handle_pf: here1\n");
-
   i_of_rounded_va = get_i_of_va_in_file(p, va_rounded);
-   cprintf("handle_pf: here2\n");
+
   if (i_of_rounded_va == -1)
     panic("handle PF: cannot find rounded VA\n");
-  cprintf("handle_pf: here3\n");
   
   if (readFromSwapFile(p, buffer, i_of_rounded_va*PGSIZE, PGSIZE) != PGSIZE)
     panic("handle PF: readFromSwapFile failed\n");
-  cprintf("handle_pf: here4\n");
 
   p->memory_pages[new_page_i_in_mem] = p->file_pages[i_of_rounded_va];
   p->file_pages[i_of_rounded_va].is_used = 0;
@@ -783,7 +779,7 @@ handle_cow(void)
     dec_counter(pa);
     // cprintf("[%x]: dec to: %d\n", pa, get_ref_counter(pa));
 
-    *pte &= ~PTE_COW;     // not COW anymore
+    *pte &= ~PTE_COW;     // not COW anymore        //todo: remove?
     *pte = V2P(mem) | PTE_P | PTE_U | PTE_W;
   }
   else {  // remove flags
