@@ -79,9 +79,9 @@ trap(struct trapframe *tf)
     break;
   case T_PGFLT:
     if (check_policy()) {
-      if (handle_cow())
+      if (myproc()->pid > 2 && handle_pf())
         break;
-      else if (myproc()->pid > 2 && handle_pf())
+      else if (handle_cow())
         break;
       else if (myproc()->pid > 2)
         panic("trap: segmentation fault\n");

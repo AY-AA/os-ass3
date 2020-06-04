@@ -102,10 +102,13 @@ fileread(struct file *f, char *addr, int n)
   if(f->type == FD_PIPE)
     return piperead(f->pipe, addr, n);
   if(f->type == FD_INODE){
+    // cprintf("fileread : f->type == FD_INODE, file: %x \n", f);
     ilock(f->ip);
+    // cprintf("fileread : f->type == FD_INODE ->>>> ilock || f->off: %d , f->ip: %x ||\n", f->off, f->ip);
     if((r = readi(f->ip, addr, f->off, n)) > 0)
       f->off += r;
     iunlock(f->ip);
+    // cprintf("fileread : f->type == FD_INODE ->>>> iUNlock\n");
     return r;
   }
   panic("fileread");
@@ -137,10 +140,12 @@ filewrite(struct file *f, char *addr, int n)
         n1 = max;
 
       begin_op();
+    // cprintf("file_WRITE : f->type == FD_INODE, file: %x (before ilock)\n", f);
       ilock(f->ip);
       if ((r = writei(f->ip, addr + i, f->off, n1)) > 0)
         f->off += r;
       iunlock(f->ip);
+    // cprintf("file_WRITE : f->type == FD_INODE ->>>> iUNlock\n");
       end_op();
 
       if(r < 0)

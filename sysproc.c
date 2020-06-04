@@ -94,3 +94,8 @@ int sys_getNumberOfFreePages(void)
 {
   return free_pages();
 }
+
+int sys_page_faults(void)
+{
+  return myproc()->page_faults;
+}

@@ -10,6 +10,7 @@
 int
 exec(char *path, char **argv)
 {
+  // cprintf("exec: \n");
   char *s, *last;
   int i, off;
   uint argc, sz, sp, ustack[3+MAXARG+1];
@@ -97,12 +98,12 @@ exec(char *path, char **argv)
   if (check_policy()) {
       // removeSwapFile(curproc);
       // createSwapFile(curproc);
-      for (i=0; i < MAX_PSYC_PAGES; i++) {
-      if (curproc->memory_pages[i].is_used)
-        curproc->memory_pages[i].pgdir = pgdir;
-      if (curproc->file_pages[i].is_used)
-        curproc->file_pages[i].pgdir = pgdir; 
-    }
+    //   for (i=0; i < MAX_PSYC_PAGES; i++) {
+    //   if (curproc->memory_pages[i].is_used)
+    //     curproc->memory_pages[i].pgdir = pgdir;
+    //   if (curproc->file_pages[i].is_used)
+    //     curproc->file_pages[i].pgdir = pgdir; 
+    // }
   }
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
@@ -111,9 +112,11 @@ exec(char *path, char **argv)
   curproc->tf->esp = sp;
   switchuvm(curproc);
   freevm(oldpgdir);
+  // cprintf("exec: finished successfully \n");
   return 0;
 
  bad:
+  // cprintf("EXEC: BAD!\n");
   if(pgdir)
     freevm(pgdir);
   if(ip){

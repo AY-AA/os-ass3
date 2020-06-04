@@ -107,7 +107,7 @@ found:
   p->swapFile = 0;
   p->timestamp = 0;
   p->page_faults = 0;
-  if (check_policy() && p->pid > 2 && createSwapFile(p) != 0)     // ignore shell & init procs
+  if (check_policy() && p->pid > 2 && createSwapFile(p))     // ignore shell & init procs
     panic("allocproc: createSwapFile failed\n");
   
   if (check_policy()) {
@@ -239,13 +239,9 @@ fork(void)
       if (curproc->file_pages[i].is_used && writeToSwapFile(np, fork_buffer, PGSIZE*i, PGSIZE) != PGSIZE)
         panic("fork: writeToSwapFile != PGSIZE\n");
 
-      // np->memory_pages[i] = curproc->memory_pages[i];
-      np->memory_pages[i].is_used = curproc->memory_pages[i].is_used;
-      np->memory_pages[i].va = curproc->memory_pages[i].va;
+      np->memory_pages[i] = curproc->memory_pages[i];
       np->memory_pages[i].pgdir = np->pgdir;
-      // np->file_pages[i] = curproc->file_pages[i];
-      np->file_pages[i].is_used = curproc->file_pages[i].is_used;
-      np->file_pages[i].va = curproc->file_pages[i].va;
+      np->file_pages[i] = curproc->file_pages[i];
       np->file_pages[i].pgdir = np->pgdir;
     }
   }
