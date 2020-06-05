@@ -1,0 +1,12 @@
+{
+    "cSpell.words": [
+        "msb",
+        "nfua",
+        "nfua msb"
+    ],
+    "files.associations": {
+        "chrono": "c",
+        "random": "c",
+        "limits": "c"
+    }
+}

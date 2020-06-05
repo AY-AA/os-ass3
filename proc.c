@@ -230,8 +230,6 @@ fork(void)
   np->page_faults = 0;
   np->timestamp = curproc->timestamp;
   np->paged_out = 0;
-  // TODO:: check if needs to clear age here
-
 
   // The forked process should have its own swap file 
   // whose initial content is
@@ -244,9 +242,11 @@ fork(void)
         panic("fork: writeToSwapFile != PGSIZE\n");
 
       np->memory_pages[i] = curproc->memory_pages[i];
-      np->memory_pages[i].pgdir = np->pgdir;
+      np->memory_pages[i].age = np->memory_pages[i].age;
+      np->memory_pages[i].pgdir = np->pgdir;      //TODO: should be reset?
       np->file_pages[i] = curproc->file_pages[i];
-      np->file_pages[i].pgdir = np->pgdir;
+      np->file_pages[i].age = np->file_pages[i].age;
+      np->file_pages[i].pgdir = np->pgdir;        //TODO: should be reset?
     }
   }
 
@@ -407,10 +407,11 @@ scheduler(void)
       switchuvm(p);
       p->state = RUNNING;
 
-      #if NFU	
-        NFU_update_age();
+      #if NFUA || LAPA
+        NFUA_update_age();
+      #elif AQ
+        AQ_update_queue();
       #endif
-      // add for LAPA
 
       swtch(&(c->scheduler), p->context);
       switchkvm();
@@ -599,7 +600,7 @@ procdump(void)
         total_paged_out++;
     }
 
-    cprintf("%d %s %d %d %d %d %s", p->pid, state, PGROUNDUP(p->sz)/PGSIZE, total_paged_out, p->page_faults, p->paged_out, p->name);
+    cprintf("[%d: %s] [alloc pages: %d] [paged out(now): %d] [page faults: %d] [paged out(total): %d] [name: %s]", p->pid, state, PGROUNDUP(p->sz)/PGSIZE, total_paged_out, p->page_faults, p->paged_out, p->name);
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)

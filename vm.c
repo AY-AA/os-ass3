@@ -7,6 +7,10 @@
 #include "proc.h"
 #include "elf.h"
 
+#define MAX_UINT 4294967295
+#define NFUA_MSB 0x80000000
+#define BITS_IN_UINT 32
+
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
 
@@ -235,27 +239,89 @@ check_policy()
 	return 1;
 }
 
-int
-NFUA_next()
-{
-  struct proc *curproc = myproc();
-  int i, next_i = 0;
-  int min = curproc->memory_pages[0].age;
-  for(i = 1; i < MAX_PSYC_PAGES; i++) {
-    if(curproc->memory_pages[i].is_used && curproc->memory_pages[i].age < min){
-      next_i = i;
-      min = curproc->memory_pages[i].age;
+void
+AQ_update_queue() {
+  int i;
+  pte_t *pte_i = 0, *pte_next_i = 0;
+  struct page page_i, page_next_i;
+  struct proc *p = myproc();
+
+  for (i = 1; i < MAX_PSYC_PAGES-1; i++) {
+    if (p->memory_pages[i].is_used && p->memory_pages[i+1].is_used) {
+      page_i = p->memory_pages[i];
+      page_next_i = p->memory_pages[i+1];
+
+      if (!(pte_i = walkpgdir(p->pgdir, (char*) page_i.va, 0)))
+        panic("AQ_update_queue: walkpgdir page_i failed\n");
+      if (!(pte_next_i = walkpgdir(p->pgdir, (char*) page_next_i.va, 0)))
+        panic("AQ_update_queue: walkpgdir page_prev_i failed\n");
+      
+      if (!(*pte_i & PTE_A) && (*pte_next_i & PTE_A)) {   // current accessed and prev is not
+          cprintf("[AQ_update_queue] switching %d with %d\n", i-1, i);
+          p->memory_pages[i+1] = page_i;
+          p->memory_pages[i] = page_next_i;
+      }
     }
   }
+}
 
+void 
+NFUA_update_age() {
+  int i;
+  pte_t *pte;
+  struct proc *p = myproc();
+
+  for(i = 0; i < MAX_PSYC_PAGES; i++) { 
+    if(p->memory_pages[i].is_used) {
+      p->memory_pages[i].age = p->memory_pages[i].age >> 1;       // shift right
+      pte = walkpgdir(p->pgdir, (char*)p->memory_pages[i].va, 0);
+      if(*pte & PTE_A) {  // if accessed, 1 is added to MSB & accessed bit is turned off
+        p->memory_pages[i].age = p->memory_pages[i].age | NFUA_MSB;
+        *pte &= ~PTE_A;     // turn off accessed bit
+      }
+    }
+  }
+}
+
+int
+NFUA_next(struct proc *p)
+{
+  int i, next_i = -1;
+  uint min = -1;
+  for(i = 1; i < MAX_PSYC_PAGES; i++) {
+    if(p->memory_pages[i].is_used && (p->memory_pages[i].age < min || min == -1)){
+      next_i = i;
+      min = p->memory_pages[i].age;
+    }
+  }
   return next_i;
 }
 
 int
 LAPA_next(struct proc *p)
 {
-  p->r_robin++;
-  return p->r_robin%MAX_PSYC_PAGES;
+  int i, j, next_i = -1, curr_ones = 0;
+  uint min_ones = BITS_IN_UINT + 10, min_age = MAX_UINT;
+  for(i = 1; i < MAX_PSYC_PAGES; i++) {
+    if(p->memory_pages[i].is_used){
+      curr_ones = 0;
+      for (j = 0; j < BITS_IN_UINT; j++) {
+        if (p->memory_pages[i].age & (1 << j))    // if current bit is on
+          curr_ones++;
+      }
+      if (curr_ones < min_ones) {
+        min_ones = curr_ones;
+        next_i = i;
+        min_age = p->memory_pages[i].age;
+      }
+      else if (curr_ones == min_ones && p->memory_pages[i].age < min_age) {
+        min_ones = curr_ones;
+        next_i = i;
+        min_age = p->memory_pages[i].age;
+      }
+    }
+  }
+  return next_i;
 }
 
 int
@@ -263,7 +329,7 @@ SCFIFO_next(struct proc *p)
 {
   int i, next_i = -1;
   pte_t *pte;
-  uint min_timestap = 4294967295;
+  uint min_timestap = MAX_UINT;
 
   // find oldest
   for (i = 0; i < MAX_PSYC_PAGES ; i++) {
@@ -290,6 +356,33 @@ SCFIFO_next(struct proc *p)
 int
 AQ_next(struct proc *p)
 {
+  // when a page is created or loaded into the RAM, 
+  // it takes the first place in the queue.
+
+  int i, next_i = -1;
+  struct page to_remove;
+  for (i = MAX_PSYC_PAGES - 1; i >= 0; i--) {   // find last used index
+    if (p->memory_pages[i].is_used) {
+      next_i = i;
+      to_remove = p->memory_pages[i];
+      break;
+    }
+  }
+
+  for (i = next_i; i >= 1; i--) {
+    p->memory_pages[i] = p->memory_pages[i-1];
+  }
+  
+  if (next_i != -1) {
+    p->memory_pages[0] = to_remove;
+    return 0;
+  }
+  return next_i;
+}
+
+int
+RROBIN_next(struct proc *p)   // just for testing
+{
   p->r_robin++;
   return p->r_robin%MAX_PSYC_PAGES;
 }
@@ -302,11 +395,12 @@ next_i_in_mem_to_remove(struct proc *p)
   #if NFUA
     do {
       next_i = NFUA_next(p);
-      // cprintf("NFUA_next: [PID: %d] i selected: %d, timestamp: %d, va: %x\n", p->pid, next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
+      cprintf("NFUA_next: [PID: %d] i selected: %d, age: %d va: %x\n", p->pid, next_i, p->memory_pages[next_i].age, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #elif LAPA
     do {
       next_i = LAPA_next(p);
+      cprintf("LAPA_next: [PID: %d] i selected: %d, age: %d va: %x\n", p->pid, next_i, p->memory_pages[next_i].age, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #elif SCFIFO
     do {
@@ -316,7 +410,12 @@ next_i_in_mem_to_remove(struct proc *p)
   #elif AQ
     do {
       next_i = AQ_next(p);
-      cprintf("AQ: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].timestamp, p->memory_pages[next_i].va);
+      cprintf("AQ: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
+    } while(next_i == -1);
+  #elif RROBIN
+    do {
+      next_i = RROBIN_next(p);
+      cprintf("RROBIN: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #endif
   if (next_i == -1)
@@ -790,24 +889,4 @@ handle_cow(void)
 
   lcr3(V2P(p->pgdir));
   return 1;
-}
-
-void 
-NFU_update_age() {
-  int i;
-  pte_t *pte;
-  struct proc *curproc = myproc();
-
-//TODO:: check if need to run MAX_PSYC_PAGES or MAX_TOTAL_PAGES times
-//TODO:: define in defs so its accessible from proc.c
-  for(i = 0; i < MAX_PSYC_PAGES; i++) { 
-      if(curproc->memory_pages[i].is_used == 1) {
-        curproc->memory_pages[i].age = curproc->memory_pages[i].age >> 1;
-        pte = walkpgdir(curproc->pgdir, (void*)curproc->memory_pages[i].va, 0);
-        if(*pte & PTE_A) {
-          curproc->memory_pages[i].age = curproc->memory_pages[i].age | 0x80000000;
-          *pte &= ~PTE_A;     // turn off accessed bit
-        }
-      }
-  }
 }
