@@ -69,8 +69,8 @@ dec_counter(uint v)
 int
 total_pages(void)
 {
-  int total_add = PHYSTOP - V2P((uint)end);
-  return PGROUNDDOWN(total_add) / PGSIZE;
+  int total_addresses = PHYSTOP - V2P((uint)end);
+  return PGROUNDDOWN(total_addresses) / PGSIZE;
 }
 
 int

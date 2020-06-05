@@ -68,8 +68,10 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
   for(;;){
     if((pte = walkpgdir(pgdir, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_P)
+    if(*pte & PTE_P) {
+      cprintf("%x\n", *pte);
       panic("remap");
+    }
     *pte = pa | perm | PTE_P;
     if(a == last)
       break;
@@ -381,6 +383,10 @@ set_page_flags_in_mem(pde_t *pgdir, uint va, uint pa)
   pte_t *pte = walkpgdir(pgdir, (int*) va, 0);
   if (!pte)
     panic("failed setting PTE flags when handling trap\n");
+  if (*pte & PTE_P) {
+    cprintf("VA: %x, PA: %x", va, pa);
+    panic("set flags into mem: remap");
+  }
   
   *pte |= PTE_P | PTE_W | PTE_U;   // PTE is in mem, writable and user's
   *pte &= ~PTE_PG;   // PTE is NOT in disk
@@ -390,12 +396,13 @@ set_page_flags_in_mem(pde_t *pgdir, uint va, uint pa)
 void
 set_page_flags_in_disk(pde_t *pgdir, uint va)
 {
-  pte_t *pte = walkpgdir(pgdir, (int*) va, 0);
+  pte_t *pte = walkpgdir(pgdir, (char *) va, 0);
   if (!pte)
     panic("failed setting PTE flags after writing to file\n");
   
   *pte |= PTE_PG;   // PTE is in file
   *pte &= ~PTE_P;   // PTE is NOT in memory
+  *pte &= ~PTE_FLAGS(*pte);   // clear pa
 }
 
 int
@@ -688,7 +695,8 @@ handle_pf(void)
 {
   struct page old_page;
   uint old_pa, va, va_rounded;
-  int new_page_i_in_mem, new_page_i_in_file, i_of_rounded_va, is_need_swap;
+  int new_page_i_in_mem, i_of_rounded_va, is_need_swap;
+  // int new_page_i_in_file;
   char *pa;
   pte_t *pte;
   struct proc *p = myproc();
@@ -738,21 +746,20 @@ handle_pf(void)
 
   if (is_need_swap) {
     old_pa = find_pa(old_page.pgdir, old_page.va);
-    new_page_i_in_file = next_free_i_in_file(p);
+    // new_page_i_in_file = next_free_i_in_file(p);
     // cprintf("handle_pf: [CPU: %d]", mycpu()->apicid);
-    if (writeToSwapFile(p, (char*)old_page.va, new_page_i_in_file*PGSIZE, PGSIZE) == -1)
+    if (writeToSwapFile(p, (char*)old_page.va, i_of_rounded_va*PGSIZE, PGSIZE) == -1)
       panic("handle PF: writeToSwapFile failed\n");
 
     p->paged_out++;
-    
-    p->file_pages[new_page_i_in_file].is_used = 1;
-    p->file_pages[new_page_i_in_file].pgdir = old_page.pgdir;
-    p->file_pages[new_page_i_in_file].va = old_page.va;
+    p->file_pages[i_of_rounded_va].is_used = 1;
+    p->file_pages[i_of_rounded_va].pgdir = old_page.pgdir;
+    p->file_pages[i_of_rounded_va].va = old_page.va;
 
     set_page_flags_in_disk(old_page.pgdir, old_page.va);
     lcr3(V2P(p->pgdir));
-
     kfree(P2V(old_pa));
+
     memmove((char*)va_rounded, buffer, PGSIZE);
     // memmove(pa, buffer, PGSIZE);
   }
@@ -768,46 +775,34 @@ handle_pf(void)
 int
 handle_cow(void) 
 {
-  uint va, pa;
+  
   char *mem;
   pte_t *pte;
   struct proc *p = myproc();
+  uint pa, va = rcr2();
 
-  // cprintf("handling cow: ");
-
-  va = rcr2();
   pte = walkpgdir(p->pgdir, (char*)va, 0);
-  if ((pte = walkpgdir(p->pgdir, (char*)va, 0)) == 0) {
+  if ((pte = walkpgdir(p->pgdir, (char*)va, 0)) == 0) 
     panic("handle_cow: walkdir failed\n");
-  }
-  if ((*pte & PTE_W) || !(*pte & PTE_COW)) { // not COW or writable
+
+  if ((*pte & PTE_W) || !(*pte & PTE_COW)) // not COW or writable
     return 0;
-  }
+
   pa = PTE_ADDR(*pte);
 
-  // cprintf("handle_cow ============================ get_ref_counter = %d\n", get_ref_counter(pa));
-  // cprintf("cow: [%d] PTE BEFORE: %x\n", p->pid, *pte);
-
-  if (get_ref_counter(pa) > 1) {  // handling copy
+  if (get_ref_counter(pa) > 1) {  // copy
     if((mem = kalloc()) == 0) {
       panic("COW: kalloc failed\n");
     }
-
-    // cprintf("[%x]: (refs: %d) | ",pa, get_ref_counter(pa));
     memmove(mem, (char*)P2V(pa), PGSIZE);
-    // cprintf("[%x]: new mem: %d | ", V2P(mem), get_ref_counter(V2P(mem)));
-
     dec_counter(pa);
-    // cprintf("[%x]: dec to: %d\n", pa, get_ref_counter(pa));
-    *pte &= ~PTE_COW;     // not COW anymore        //todo: remove?
+    *pte &= ~PTE_COW;     // not COW anymore
     *pte = V2P(mem) | PTE_P | PTE_U | PTE_W;
   }
   else {  // remove flags
-    // cprintf("[%x]: NOT > 1, (refs: %d)\n",pa, get_ref_counter(pa));
     *pte &= ~PTE_COW;     // not COW anymore
     *pte |= PTE_W;
   }
-  // cprintf("cow: [%d] PTE AFTER: %x\n", p->pid, *pte);
 
   lcr3(V2P(p->pgdir));
   return 1;
@@ -827,7 +822,7 @@ NFU_update_age() {
         pte = walkpgdir(curproc->pgdir, (void*)curproc->memory_pages[i].va, 0);
         if(*pte & PTE_A) {
           curproc->memory_pages[i].age = curproc->memory_pages[i].age | 0x80000000;
-          *pte = TURN_OFF_A(*pte);
+          *pte &= ~PTE_A;     // turn off accessed bit
         }
       }
   }

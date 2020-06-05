@@ -13,10 +13,12 @@ exec(char *path, char **argv)
   // cprintf("exec: \n");
   char *s, *last;
   int i, off;
-  uint argc, sz, sp, ustack[3+MAXARG+1];
+  uint argc, sz, sp, ustack[3+MAXARG+1], pf_backup = 0, pagedout_backup = 0, timestamp_backup = 0;
   struct elfhdr elf;
   struct inode *ip;
   struct proghdr ph;
+  struct page mem_backup[MAX_PSYC_PAGES];
+  struct page file_backup[MAX_PSYC_PAGES];
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
 
@@ -29,6 +31,26 @@ exec(char *path, char **argv)
   }
   ilock(ip);
   pgdir = 0;
+
+  if (check_policy() && curproc->pid > 2) {
+    for (i = 0; i < MAX_PSYC_PAGES; i++) {
+      mem_backup[i].is_used = curproc->memory_pages[i].is_used;
+      mem_backup[i].offset = curproc->memory_pages[i].offset;
+      mem_backup[i].va = curproc->memory_pages[i].va;
+      mem_backup[i].time_loaded = curproc->memory_pages[i].time_loaded;
+      mem_backup[i].age = curproc->memory_pages[i].age;
+
+      file_backup[i].is_used = curproc->file_pages[i].is_used;
+      file_backup[i].offset = curproc->file_pages[i].offset;
+      file_backup[i].va = curproc->file_pages[i].va;
+      file_backup[i].time_loaded = curproc->file_pages[i].time_loaded;
+      file_backup[i].age = curproc->file_pages[i].age;
+
+      pf_backup = curproc->page_faults;
+      pagedout_backup = curproc->paged_out;
+      timestamp_backup = curproc->timestamp;
+    }
+  }
 
   // Check ELF header
   if(readi(ip, (char*)&elf, 0, sizeof(elf)) != sizeof(elf))
@@ -95,9 +117,9 @@ exec(char *path, char **argv)
   safestrcpy(curproc->name, last, sizeof(curproc->name));
 
   // Commit to the user image.
-  if (check_policy()) {
-      // removeSwapFile(curproc);
-      // createSwapFile(curproc);
+  if (check_policy() && curproc->pid > 2) {
+      removeSwapFile(curproc);
+      createSwapFile(curproc);
     //   for (i=0; i < MAX_PSYC_PAGES; i++) {
     //   if (curproc->memory_pages[i].is_used)
     //     curproc->memory_pages[i].pgdir = pgdir;
@@ -116,6 +138,27 @@ exec(char *path, char **argv)
   return 0;
 
  bad:
+
+  if (check_policy() && curproc->pid > 2) {
+    for (i = 0; i < MAX_PSYC_PAGES; i++) {
+      curproc->memory_pages[i].is_used = mem_backup[i].is_used;
+      curproc->memory_pages[i].offset = mem_backup[i].offset;
+      curproc->memory_pages[i].va = mem_backup[i].va;
+      curproc->memory_pages[i].time_loaded = mem_backup[i].time_loaded;
+      curproc->memory_pages[i].age = mem_backup[i].age;
+
+      curproc->file_pages[i].is_used = file_backup[i].is_used;
+      curproc->file_pages[i].offset = file_backup[i].offset;
+      curproc->file_pages[i].va = file_backup[i].va;
+      curproc->file_pages[i].time_loaded = file_backup[i].time_loaded;
+      curproc->file_pages[i].age = file_backup[i].age;
+
+      curproc->page_faults = pf_backup;
+      curproc->paged_out = pagedout_backup;
+      curproc->timestamp = timestamp_backup;
+    }
+  }
+
   // cprintf("EXEC: BAD!\n");
   if(pgdir)
     freevm(pgdir);
