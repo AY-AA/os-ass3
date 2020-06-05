@@ -40,6 +40,7 @@ struct page {
   uint offset;
   uint is_used;
   uint time_loaded;
+  uint age;
 };
 
 // Per-process state

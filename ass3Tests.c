@@ -50,7 +50,7 @@ void swap_test(){
   char *expected_res_child_1 = "11111111111111111111111111111111111111113333333333";
   char *expected_res_child_2 = "22222222222222222222222222222222222222224444444444";
   int expected_pf_child = 10;
-  int expected_pf_parent = 5;
+  // int expected_pf_parent = 5;
 
   printf(1,"allocating buffer with size: %d\n", BUFF_SIZE);
   buffer = malloc(BUFF_SIZE);

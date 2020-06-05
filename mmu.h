@@ -1,3 +1,13 @@
+//custom macros:
+
+#define TURN_OFF_PG(pte)     ((uint)(pte) & ~PTE_PG)
+#define TURN_OFF_P(pte)      ((uint)(pte) & ~PTE_P)
+#define TURN_OFF_A(pte)      ((uint)(pte) & ~PTE_A)
+
+#define TURN_ON_PG(pte)      ((uint)(pte) | PTE_PG)
+#define TURN_ON_P(pte)       ((uint)(pte) | PTE_P)
+#define TURN_ON_A(pte)       ((uint)(pte) | PTE_A)
+
 // This file contains definitions for the
 // x86 memory management unit (MMU).
 
