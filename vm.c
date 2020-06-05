@@ -240,16 +240,31 @@ check_policy()
 }
 
 void
-AQ_update_queue() {
+print_queue(struct proc *p, char* str_before)
+{
+  if (p->pid <= 2)  
+    return;
+  cprintf("%s\n", str_before);
+  for (int i = 0; i < MAX_PSYC_PAGES; i++) {
+    if (i == MAX_PSYC_PAGES/2)
+      cprintf("\n");
+    cprintf("[%d: %x(%s)]->", i, p->memory_pages[i].va, p->memory_pages[i].is_used ? "V" : "X");
+  }
+  cprintf("\n\n");
+}
+
+void
+AQ_update_queue() 
+{
   int i;
   pte_t *pte_i = 0, *pte_next_i = 0;
   struct page page_i, page_next_i;
   struct proc *p = myproc();
 
-  for (i = 1; i < MAX_PSYC_PAGES-1; i++) {
-    if (p->memory_pages[i].is_used && p->memory_pages[i+1].is_used) {
+  for (i = MAX_PSYC_PAGES - 1; i >= 1; i--) {
+    if (p->memory_pages[i].is_used && p->memory_pages[i-1].is_used) {
       page_i = p->memory_pages[i];
-      page_next_i = p->memory_pages[i+1];
+      page_next_i = p->memory_pages[i-1];
 
       if (!(pte_i = walkpgdir(p->pgdir, (char*) page_i.va, 0)))
         panic("AQ_update_queue: walkpgdir page_i failed\n");
@@ -257,8 +272,7 @@ AQ_update_queue() {
         panic("AQ_update_queue: walkpgdir page_prev_i failed\n");
       
       if (!(*pte_i & PTE_A) && (*pte_next_i & PTE_A)) {   // current accessed and prev is not
-          cprintf("[AQ_update_queue] switching %d with %d\n", i-1, i);
-          p->memory_pages[i+1] = page_i;
+          p->memory_pages[i-1] = page_i;
           p->memory_pages[i] = page_next_i;
       }
     }
@@ -358,26 +372,13 @@ AQ_next(struct proc *p)
 {
   // when a page is created or loaded into the RAM, 
   // it takes the first place in the queue.
-
-  int i, next_i = -1;
-  struct page to_remove;
-  for (i = MAX_PSYC_PAGES - 1; i >= 0; i--) {   // find last used index
-    if (p->memory_pages[i].is_used) {
-      next_i = i;
-      to_remove = p->memory_pages[i];
-      break;
-    }
-  }
-
-  for (i = next_i; i >= 1; i--) {
+  int i;
+  struct page to_remove = p->memory_pages[MAX_PSYC_PAGES-1];
+  for (i = MAX_PSYC_PAGES - 1; i > 0 ; i--) {
     p->memory_pages[i] = p->memory_pages[i-1];
   }
-  
-  if (next_i != -1) {
-    p->memory_pages[0] = to_remove;
-    return 0;
-  }
-  return next_i;
+  p->memory_pages[0] = to_remove;
+  return 0;
 }
 
 int
@@ -410,7 +411,7 @@ next_i_in_mem_to_remove(struct proc *p)
   #elif AQ
     do {
       next_i = AQ_next(p);
-      cprintf("AQ: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
+      // cprintf("AQ: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #elif RROBIN
     do {
@@ -562,12 +563,20 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     
     if (check_policy() && p->pid > 2) {
       next_free_i_mem = next_free_i_in_mem(p);
+      #if AQ
+        if (next_free_i_mem != -1) {
+          AQ_next(p);
+          next_free_i_mem = 0;
+        }
+      #endif
+
       next_free_i_mem = next_free_i_mem == -1 ? swap(p) : next_free_i_mem;
       p->memory_pages[next_free_i_mem].pgdir = pgdir;
       p->memory_pages[next_free_i_mem].is_used = 1;
       p->memory_pages[next_free_i_mem].va = a;
       p->memory_pages[next_free_i_mem].time_loaded = p->timestamp++;
       p->memory_pages[next_free_i_mem].age = 0;
+
     }
   }
   return newsz;
