@@ -22,3 +22,7 @@
 #define SYS_close  21
 #define SYS_getNumberOfFreePages 22
 #define SYS_page_faults 23
+#define SYS_total_page_faults 24
+#define SYS_get_paged_out 25
+#define SYS_get_total_pages 26
+#define SYS_get_used_pages 27

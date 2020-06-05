@@ -105,6 +105,10 @@ extern int sys_write(void);
 extern int sys_uptime(void);
 extern int sys_getNumberOfFreePages(void);
 extern int sys_page_faults(void);
+extern int sys_total_page_faults(void);
+extern int sys_get_paged_out(void);
+extern int sys_get_total_pages(void);
+extern int sys_get_used_pages(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -129,7 +133,11 @@ static int (*syscalls[])(void) = {
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
 [SYS_getNumberOfFreePages]  sys_getNumberOfFreePages,
-[SYS_page_faults]  sys_page_faults,
+[SYS_page_faults]           sys_page_faults,
+[SYS_total_page_faults]     sys_total_page_faults,
+[SYS_get_paged_out]         sys_get_paged_out,
+[SYS_get_total_pages]       sys_get_total_pages,
+[SYS_get_used_pages]        sys_get_used_pages
 };
 
 void

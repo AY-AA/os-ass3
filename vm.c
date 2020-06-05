@@ -404,6 +404,7 @@ swap(struct proc *p)
   // cprintf("swap: next_free_i_in_file: %d ", next_free_i_file);
   if (writeToSwapFile(p, (char*) p->memory_pages[i_in_mem_to_remove].va, next_free_i_file*PGSIZE, PGSIZE) == -1)
     return -1;
+  p->paged_out++;
 
   // swap from memory to file
   p->file_pages[next_free_i_file].pgdir = p->memory_pages[i_in_mem_to_remove].pgdir;
@@ -731,6 +732,8 @@ handle_pf(void)
     // cprintf("handle_pf: [CPU: %d]", mycpu()->apicid);
     if (writeToSwapFile(p, (char*)old_page.va, new_page_i_in_file*PGSIZE, PGSIZE) == -1)
       panic("handle PF: writeToSwapFile failed\n");
+
+    p->paged_out++;
     
     p->file_pages[new_page_i_in_file].is_used = 1;
     p->file_pages[new_page_i_in_file].pgdir = old_page.pgdir;
@@ -743,8 +746,10 @@ handle_pf(void)
     memmove((char*)va_rounded, buffer, PGSIZE);
     // memmove(pa, buffer, PGSIZE);
   }
-  else
+  else {
+    cprintf("handle_pf: ELSE ... \n");
     memmove((char*)va_rounded, buffer, PGSIZE);
+  }
 
   return 1;
 }

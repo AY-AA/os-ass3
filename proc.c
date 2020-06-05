@@ -107,6 +107,7 @@ found:
   p->swapFile = 0;
   p->timestamp = 0;
   p->page_faults = 0;
+  p->paged_out = 0;
   if (check_policy() && p->pid > 2 && createSwapFile(p))     // ignore shell & init procs
     panic("allocproc: createSwapFile failed\n");
   
@@ -228,6 +229,7 @@ fork(void)
   *np->tf = *curproc->tf;
   np->page_faults = 0;
   np->timestamp = curproc->timestamp;
+  np->paged_out = 0;
 
   // The forked process should have its own swap file 
   // whose initial content is
@@ -312,6 +314,11 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
+
+  #if TRUE
+    procdump();
+  #endif
+
   sched();
   panic("zombie exit");
 }
@@ -566,7 +573,7 @@ procdump(void)
   [RUNNING]   "run   ",
   [ZOMBIE]    "zombie"
   };
-  int i;
+  int i, total_paged_out = 0;
   struct proc *p;
   char *state;
   uint pc[10];
@@ -578,7 +585,14 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    cprintf("%d %s %s", p->pid, state, p->name);
+
+    total_paged_out = 0;
+    for (i = 0; i < MAX_PSYC_PAGES; i++) {
+      if (p->file_pages[i].is_used)
+        total_paged_out++;
+    }
+
+    cprintf("%d %s %d %d %d %d %s", p->pid, state, PGROUNDUP(p->sz)/PGSIZE, total_paged_out, p->page_faults, p->paged_out, p->name);
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
@@ -586,4 +600,5 @@ procdump(void)
     }
     cprintf("\n");
   }
+  cprintf("%d / %d free page frames in the system\n", used_pages(), total_pages());
 }

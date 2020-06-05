@@ -64,6 +64,7 @@ struct proc {
   struct page file_pages[MAX_PSYC_PAGES];
   struct page memory_pages[MAX_PSYC_PAGES];
   uint page_faults;
+  uint paged_out;
   uint timestamp;
   uint r_robin;     //temp
 };

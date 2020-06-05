@@ -24,7 +24,11 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int getNumberOfFreePages(void);
+int get_used_pages(void);
+int get_total_pages(void);
 int page_faults(void);
+int total_page_faults(void);
+int get_paged_out(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -9,10 +9,10 @@
 #include "mmu.h"
 #include "spinlock.h"
 
-int free_pages_counter = PHYSTOP / PGSIZE;
 void freerange(void *vstart, void *vend);
 extern char end[]; // first address after kernel loaded from ELF file
                    // defined by the kernel linker script in kernel.ld
+int used_pages_counter = 0;
 
 struct run {
   struct run *next;
@@ -67,27 +67,23 @@ dec_counter(uint v)
 }
 
 int
-free_pages(void)
+total_pages(void)
 {
-  // struct run *r;
-  // int free_p = 0;
-
-  // if(kmem.use_lock)
-  //   acquire(&kmem.lock);
-
-  // r = kmem.freelist;
-  // while (r) {
-  //   free_p++;
-  //   r = r->next;
-  // }
-
-  // if(kmem.use_lock)
-  //   release(&kmem.lock);
-
-  // return free_p;
-  return free_pages_counter;
+  int total_add = PHYSTOP - V2P((uint)end);
+  return PGROUNDDOWN(total_add) / PGSIZE;
 }
 
+int
+free_pages(void)
+{
+  return used_pages_counter;
+}
+
+int
+used_pages(void)
+{
+  return total_pages() - used_pages_counter;
+}
 
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
@@ -152,7 +148,7 @@ kfree(char *v)
   r = (struct run*)v;
   r->next = kmem.freelist;
   kmem.freelist = r;
-  free_pages_counter ++;
+  used_pages_counter ++;
   if(kmem.use_lock)
     release(&kmem.lock);
 }
@@ -173,7 +169,7 @@ kalloc(void)
   if(r) {
     kmem.freelist = r->next;
     kmem.references_count[V2P(r) >> PTXSHIFT] = 1;
-    free_pages_counter --;
+    used_pages_counter --;
   }
 
   if(kmem.use_lock)

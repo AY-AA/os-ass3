@@ -99,3 +99,23 @@ int sys_page_faults(void)
 {
   return myproc()->page_faults;
 }
+
+int sys_total_page_faults(void)
+{
+  return 1;
+}
+
+int sys_get_paged_out(void)
+{
+  return 2;
+}
+
+int sys_get_total_pages(void)
+{
+  return total_pages();
+}
+
+int sys_get_used_pages(void)
+{
+  return used_pages();
+}

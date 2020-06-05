@@ -25,7 +25,7 @@ void test_number_of_pages(int expected) {
 
 void test_number_of_page_faults(int expected, int is_child) {
   int actual = page_faults();
-  printf(1, "%s", is_child ? "child: " : "parent: ");
+  printf(1, "%s", is_child ? "[child]: " : "[parent]: ");
   printf(1,"pages faults test: ");
   if (actual == expected) {
     printf(1, "SUCCESS\n");
@@ -38,17 +38,19 @@ void test_number_of_page_faults(int expected, int is_child) {
 
 
 void swap_test(){
-  int i, j1, j2, res = 1, expected_free_pages, num_of_pf_before , num_of_free_pages_before = getNumberOfFreePages();
+  int i, j1, j2, res = 1, expected_free_pages, num_of_pf_before , num_of_free_pages_before;
   printf(1, "==================================\n");
   printf(1, "Started swap and cow test\n\n");
-  printf(1,"free pages: %d\n", num_of_free_pages_before);
+  printf(1,"free pages: %d\n", num_of_free_pages_before = getNumberOfFreePages());
+  printf(1,"used pages: %d\n", get_used_pages());
 
   char *buffer;
   char *expected_res_parent_1 = "11111111111111111111111111111111111111111111111111";
   char *expected_res_parent_2 = "22222222222222222222222222222222222222222222222222";
   char *expected_res_child_1 = "11111111111111111111111111111111111111113333333333";
   char *expected_res_child_2 = "22222222222222222222222222222222222222224444444444";
-  int expected_pf = 5;
+  int expected_pf_child = 10;
+  int expected_pf_parent = 5;
 
   printf(1,"allocating buffer with size: %d\n", BUFF_SIZE);
   buffer = malloc(BUFF_SIZE);
@@ -59,15 +61,16 @@ void swap_test(){
   j2 = BUFF_SIZE-800;
 
   // TODO: this is a very beautiful bug we need to fix :)
+  // TODO: after running with this code, try ls twice
   // num_of_pf_before = page_faults();
-  // for (i = 1; i <= expected_pf; i++)
+  // for (i = 1; i <= expected_pf_parent; i++)
   //   buffer[PGSIZE*i + 1] = '2';
-  // test_number_of_page_faults(num_of_pf_before + expected_pf, 0);
+  // test_number_of_page_faults(num_of_pf_before + expected_pf_parent, 0);
 
   for (i = 0; i < 50; i++) { 
     buffer[j1 + i] = '1';
     buffer[j2 + i] = '2';
-    buffer[i] = '1';
+    // buffer[i] = '1';
   }
   
   // delimeter
@@ -79,20 +82,20 @@ void swap_test(){
 	    buffer[j1 + i] = '3';
 	    buffer[j2 + i] = '4';
   	}
-    for (i = 1; i <= expected_pf; i++)
+    for (i = 1; i <= expected_pf_child; i++)
       buffer[PGSIZE*i + 1] = '2';
 
     if (strcmp(&buffer[j1], expected_res_child_1)) {
       res = 0;
-      printf(1, "child: FAILURE:\nexpected: %s\nactual: %s\n", expected_res_child_1, &buffer[j1]);
+      printf(1, "[child] FAILURE:\nexpected: %s\nactual: %s\n", expected_res_child_1, &buffer[j1]);
     }
     if (strcmp(&buffer[j2], expected_res_child_2)) {
       res = 0;
-      printf(1, "child: FAILURE:\nexpected: %s\nactual: %s\n", expected_res_child_2, &buffer[j2]);
+      printf(1, "[child] FAILURE:\nexpected: %s\nactual: %s\n", expected_res_child_2, &buffer[j2]);
     }
     free(buffer);
-    test_number_of_page_faults(expected_pf, 1);
-    printf(1, "child result: %s\n", res ? "SUCCESS" : "FAILURE");
+    test_number_of_page_faults(expected_pf_child, 1);
+    printf(1, "[child] result: %s\n", res ? "SUCCESS" : "FAILURE");
     exit();
   } 
   else { // parent
@@ -100,15 +103,15 @@ void swap_test(){
 
     if (strcmp(&buffer[j1], expected_res_parent_1)) {
       res = 0;
-      printf(1, "parent: FAILURE:\nexpected: %s\nactual: %s\n", expected_res_parent_1, &buffer[j1]);
+      printf(1, "[parent]: FAILURE:\nexpected: %s\nactual: %s\n", expected_res_parent_1, &buffer[j1]);
     }
     if (strcmp(&buffer[j2], expected_res_parent_2)) {
       res = 0;
-      printf(1, "parent: FAILURE:\nexpected: %s\nactual: %s\n", expected_res_parent_2, &buffer[j2]);
+      printf(1, "[parent]: FAILURE:\nexpected: %s\nactual: %s\n", expected_res_parent_2, &buffer[j2]);
     }
     free(buffer);
-    printf(1, "parent: total page faults: %d\n", page_faults());
-    printf(1, "parent: result: %s\n", res ? "SUCCESS" : "FAILURE");
+    printf(1, "[parent]: total page faults: %d\n", page_faults());
+    printf(1, "[parent]: result: %s\n", res ? "SUCCESS" : "FAILURE");
   }
 
   expected_free_pages = num_of_free_pages_before - IGNORE_PGS;
