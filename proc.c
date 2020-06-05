@@ -228,6 +228,8 @@ fork(void)
   *np->tf = *curproc->tf;
   np->page_faults = 0;
   np->timestamp = curproc->timestamp;
+  // TODO:: check if needs to clear age here
+
 
   // The forked process should have its own swap file 
   // whose initial content is
@@ -397,6 +399,11 @@ scheduler(void)
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
+
+      #if NFU	
+        NFU_update_age();
+      #endif
+      // add for LAPA
 
       swtch(&(c->scheduler), p->context);
       switchkvm();

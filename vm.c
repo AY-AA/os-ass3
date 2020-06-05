@@ -234,11 +234,19 @@ check_policy()
 }
 
 int
-NFUA_next(struct proc *p)
+NFUA_next()
 {
-  cprintf("NFUA_next\n");
-  p->r_robin++;
-  return p->r_robin%MAX_PSYC_PAGES;
+  struct proc *curproc = myproc();
+  int i, next_i = 0;
+  int min = curproc->memory_pages[0].age;
+  for(i = 1; i < MAX_PSYC_PAGES; i++) {
+    if(curproc->memory_pages[i].is_used && curproc->memory_pages[i].age < min){
+      next_i = i;
+      min = curproc->memory_pages[i].age;
+    }
+  }
+
+  return next_i;
 }
 
 int
@@ -465,6 +473,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       p->memory_pages[next_free_i_mem].is_used = 1;
       p->memory_pages[next_free_i_mem].va = a;
       p->memory_pages[next_free_i_mem].time_loaded = p->timestamp++;
+      p->memory_pages[next_free_i_mem].age = 0;
     }
   }
   return newsz;
@@ -722,6 +731,7 @@ handle_pf(void)
 
   p->memory_pages[new_page_i_in_mem] = p->file_pages[i_of_rounded_va];
   p->file_pages[i_of_rounded_va].is_used = 0;
+  p->file_pages[i_of_rounded_va].age = 0;
   p->memory_pages[new_page_i_in_mem].time_loaded = p->timestamp++;
   // p->memory_pages[new_page_i_in_mem].is_used = 1;
 
@@ -796,4 +806,24 @@ handle_cow(void)
 
   lcr3(V2P(p->pgdir));
   return 1;
+}
+
+void 
+NFU_update_age() {
+  int i;
+  pte_t *pte;
+  struct proc *curproc = myproc();
+
+//TODO:: check if need to run MAX_PSYC_PAGES or MAX_TOTAL_PAGES times
+//TODO:: define in defs so its accessible from proc.c
+  for(i = 0; i < MAX_PSYC_PAGES; i++) { 
+      if(curproc->memory_pages[i].is_used == 1) {
+        curproc->memory_pages[i].age = curproc->memory_pages[i].age >> 1;
+        pte = walkpgdir(curproc->pgdir, (void*)curproc->memory_pages[i].va, 0);
+        if(*pte & PTE_A) {
+          curproc->memory_pages[i].age = curproc->memory_pages[i].age | 0x80000000;
+          *pte = TURN_OFF_A(*pte);
+        }
+      }
+  }
 }
