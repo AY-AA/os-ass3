@@ -69,7 +69,7 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
     if((pte = walkpgdir(pgdir, a, 1)) == 0)
       return -1;
     if(*pte & PTE_P) {
-      cprintf("%x\n", *pte);
+      cprintf("[in panic] is PRESENT? %s \n", perm & PTE_P ? "TRUE" : "FALSE");
       panic("remap");
     }
     *pte = pa | perm | PTE_P;
@@ -220,9 +220,9 @@ loaduvm(pde_t *pgdir, char *addr, struct inode *ip, uint offset, uint sz)
 
 // find physical address by virtual address
 int
-find_pa(pde_t *pgdir, int va)
+find_pa(pde_t *pgdir, uint va)
 {
-  pte_t *pte = walkpgdir(pgdir, (int*) va, 0);
+  pte_t *pte = walkpgdir(pgdir, (char*) va, 0);
   return !pte ? -1 : PTE_ADDR(*pte);
 }
 
@@ -254,7 +254,6 @@ NFUA_next()
 int
 LAPA_next(struct proc *p)
 {
-  cprintf("LAPA_next\n");
   p->r_robin++;
   return p->r_robin%MAX_PSYC_PAGES;
 }
@@ -302,12 +301,11 @@ next_i_in_mem_to_remove(struct proc *p)
   int next_i = -1;
   #if NFUA
     do {
-      cprintf("NFUA!\n");
       next_i = NFUA_next(p);
+      // cprintf("NFUA_next: [PID: %d] i selected: %d, timestamp: %d, va: %x\n", p->pid, next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #elif LAPA
     do {
-      cprintf("LAPA!\n");
       next_i = LAPA_next(p);
     } while(next_i == -1);
   #elif SCFIFO
@@ -318,10 +316,7 @@ next_i_in_mem_to_remove(struct proc *p)
   #elif AQ
     do {
       next_i = AQ_next(p);
-      if (next_i == -1)
-        cprintf("AQ: -1\n");
-      else
-        cprintf("AQ: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].timestamp, p->memory_pages[next_i].va);
+      cprintf("AQ: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].timestamp, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #endif
   if (next_i == -1)
@@ -383,10 +378,6 @@ set_page_flags_in_mem(pde_t *pgdir, uint va, uint pa)
   pte_t *pte = walkpgdir(pgdir, (int*) va, 0);
   if (!pte)
     panic("failed setting PTE flags when handling trap\n");
-  if (*pte & PTE_P) {
-    cprintf("VA: %x, PA: %x", va, pa);
-    panic("set flags into mem: remap");
-  }
   
   *pte |= PTE_P | PTE_W | PTE_U;   // PTE is in mem, writable and user's
   *pte &= ~PTE_PG;   // PTE is NOT in disk
@@ -402,13 +393,12 @@ set_page_flags_in_disk(pde_t *pgdir, uint va)
   
   *pte |= PTE_PG;   // PTE is in file
   *pte &= ~PTE_P;   // PTE is NOT in memory
-  *pte &= ~PTE_FLAGS(*pte);   // clear pa
+  *pte &= PTE_FLAGS(*pte);   // clear pa
 }
 
 int
 swap(struct proc *p)
 {
-  // cprintf("swap: ");
   int i_in_mem_to_remove, next_free_i_file, pa;
 
   p->page_faults++;
@@ -416,7 +406,6 @@ swap(struct proc *p)
   i_in_mem_to_remove = next_i_in_mem_to_remove(p);
   next_free_i_file = next_free_i_in_file(p);
 
-  // cprintf("swap: next_free_i_in_file: %d ", next_free_i_file);
   if (writeToSwapFile(p, (char*) p->memory_pages[i_in_mem_to_remove].va, next_free_i_file*PGSIZE, PGSIZE) == -1)
     return -1;
   p->paged_out++;
@@ -451,12 +440,11 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     return oldsz;
 
   if (check_policy() && p->pid > 2 && (PGROUNDUP(newsz) - PGROUNDUP(oldsz))/ PGSIZE > MAX_TOTAL_PAGES) { // space needed is bigger than max num of pages
-    panic("alloc uvm: space needed is bigger than max num of pages");//todo:remove panic
-    // cprintf("alloc uvm: space requested(%d) is bigger than max allowed(%d)\n", PGROUNDUP(newsz) - PGROUNDUP(oldsz), PGSIZE * MAX_TOTAL_PAGES);
+    // panic("alloc uvm: space needed is bigger than max num of pages");//todo:remove panic
+    cprintf("alloc uvm: space requested(%d) is bigger than max allowed(%d)\n", PGROUNDUP(newsz) - PGROUNDUP(oldsz), PGSIZE * MAX_TOTAL_PAGES);
     return 0;
   }
 
-  // cprintf("allocuvm: [%d] { oldsz: %x (%d), newsz: %x (%d)} total pages: %d !!!!\n",p->pid ,oldsz, oldsz, newsz, newsz, (PGROUNDUP(newsz) - PGROUNDUP(oldsz))/ PGSIZE);
   a = PGROUNDUP(oldsz);
   for(; a < newsz; a += PGSIZE){
     mem = kalloc();
@@ -475,7 +463,6 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     
     if (check_policy() && p->pid > 2) {
       next_free_i_mem = next_free_i_in_mem(p);
-      // cprintf("allocuvm: address: %x , i (mem): %d\n", a, next_free_i_mem);
       next_free_i_mem = next_free_i_mem == -1 ? swap(p) : next_free_i_mem;
       p->memory_pages[next_free_i_mem].pgdir = pgdir;
       p->memory_pages[next_free_i_mem].is_used = 1;
@@ -514,9 +501,11 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
         panic("kfree");
       char *v = P2V(pa);
       kfree(v);
+      *pte &= ~PTE_P;   // PTE is NOT in memory
+      *pte &= ~PTE_FLAGS(*pte);   // clear pa
       if (check_policy()) {
         for (i = 0; i < MAX_PSYC_PAGES; i++) {
-          if (//p->memory_pages[i].is_used && 
+          if (p->memory_pages[i].is_used && 
               p->memory_pages[i].pgdir == pgdir && p->memory_pages[i].va == a) {
             p->memory_pages[i].is_used = 0;
             break;
@@ -543,6 +532,8 @@ freevm(pde_t *pgdir)
     if(pgdir[i] & PTE_P){
       char * v = P2V(PTE_ADDR(pgdir[i]));
       kfree(v);
+      pgdir[i] &= ~PTE_P;   // PTE is NOT in memory
+      pgdir[i] &= ~PTE_FLAGS(pgdir[i]);   // clear pa
     }
   }
   kfree((char*)pgdir);
@@ -621,7 +612,6 @@ copyonwriteuvm(pde_t *pgdir, uint sz)
     }
     if(!(*pte & PTE_P))
       panic("copyonwriteuvm: page not present");
-
 
     *pte |= PTE_COW;    // copy on write
     *pte &= ~PTE_W;     // pte is NOT writable -> need to handle in trap!
@@ -703,9 +693,8 @@ handle_pf(void)
 
   va = rcr2();
   va_rounded = PGROUNDDOWN(va);
-  // cprintf("handle_pf: va: %x, va_rounded: %x\n", va, va_rounded);
 
-  if ((pte = walkpgdir(p->pgdir, (char*)va, 0)) == 0) {
+  if ((pte = walkpgdir(p->pgdir, (char*)va_rounded, 0)) == 0) {
     panic("handle_pf: walkdir failed\n");
   }
   if ((*pte & PTE_P) || !(*pte & PTE_PG)) { // present or not paged out to secondary storage
@@ -719,11 +708,9 @@ handle_pf(void)
   
   is_need_swap = 0;
   if (new_page_i_in_mem == -1) {
-    // cprintf("handle_pf: ");
     is_need_swap = 1;
     new_page_i_in_mem = next_i_in_mem_to_remove(p);
     old_page = p->memory_pages[new_page_i_in_mem];
-    // cprintf("handle_pf: next_i_in_mem_to_remove = %d\n", new_page_i_in_mem);
   }
   
   set_page_flags_in_mem(p->pgdir, va_rounded, V2P(pa));
@@ -734,7 +721,6 @@ handle_pf(void)
   if (i_of_rounded_va == -1)
     panic("handle PF: cannot find rounded VA\n");
   
-  // cprintf("handle_pf: [CPU: %d]", mycpu()->apicid);
   if (readFromSwapFile(p, buffer, i_of_rounded_va*PGSIZE, PGSIZE) != PGSIZE)
     panic("handle PF: readFromSwapFile failed\n");
 
@@ -747,7 +733,6 @@ handle_pf(void)
   if (is_need_swap) {
     old_pa = find_pa(old_page.pgdir, old_page.va);
     // new_page_i_in_file = next_free_i_in_file(p);
-    // cprintf("handle_pf: [CPU: %d]", mycpu()->apicid);
     if (writeToSwapFile(p, (char*)old_page.va, i_of_rounded_va*PGSIZE, PGSIZE) == -1)
       panic("handle PF: writeToSwapFile failed\n");
 
@@ -764,7 +749,6 @@ handle_pf(void)
     // memmove(pa, buffer, PGSIZE);
   }
   else {
-    cprintf("handle_pf: ELSE ... \n");
     memmove((char*)va_rounded, buffer, PGSIZE);
   }
 
