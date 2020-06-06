@@ -12,7 +12,7 @@
 void freerange(void *vstart, void *vend);
 extern char end[]; // first address after kernel loaded from ELF file
                    // defined by the kernel linker script in kernel.ld
-int used_pages_counter = 0;
+// int used_pages_counter = 0;
 
 struct run {
   struct run *next;
@@ -22,14 +22,15 @@ struct {
   struct spinlock lock;
   int use_lock;
   struct run *freelist;
-  uint references_count[PHYSTOP >> PTXSHIFT];
+  uint references_count[PHYSTOP >> PGSHIFT];
+  uint free_pages;
 } kmem;
 
 void
 set_counter(uint v, int i)
 {
   acquire(&kmem.lock);
-  kmem.references_count[v >> PTXSHIFT] = i;
+  kmem.references_count[v >> PGSHIFT] = i;
   // ((struct run*)v)->ref_count = 1;
   // cprintf("get_ref_counter : %x: %d\n",v,counter);
   release(&kmem.lock);
@@ -40,21 +41,20 @@ get_ref_counter(uint v)
 {
   int counter;
   acquire(&kmem.lock);
-  counter = kmem.references_count[v >> PTXSHIFT];
+  counter = kmem.references_count[v >> PGSHIFT];
   // counter = ((struct run*)v)->ref_count;
   // cprintf("get_ref_counter original: %x, deref: %x, value: %d\n",v, (int)*v, kmem.references_count[(int)*v]);
   release(&kmem.lock);
   return counter;
 }
 
-
 void
 inc_counter(uint v)
 {
   acquire(&kmem.lock);
-  // cprintf("[%x] increased from: %d ", v, kmem.references_count[v >> PTXSHIFT]);
-  kmem.references_count[v >> PTXSHIFT]++;
-  // cprintf("to: %d\n", kmem.references_count[v >> PTXSHIFT]);
+  // cprintf("[%x] increased from: %d ", v, kmem.references_count[v >> PGSHIFT]);
+  kmem.references_count[v >> PGSHIFT]++;
+  // cprintf("to: %d\n", kmem.references_count[v >> PGSHIFT]);
   release(&kmem.lock);
 }
 
@@ -62,7 +62,7 @@ void
 dec_counter(uint v)
 {
   acquire(&kmem.lock);
-  kmem.references_count[v >> PTXSHIFT]--;
+  kmem.references_count[v >> PGSHIFT]--;
   release(&kmem.lock);
 }
 
@@ -76,13 +76,23 @@ total_pages(void)
 int
 free_pages(void)
 {
-  return used_pages_counter;
+  int free_pages;
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
+
+  free_pages = kmem.free_pages;
+
+  if(kmem.use_lock)
+    release(&kmem.lock);
+  
+  return free_pages;
+  // return used_pages_counter;
 }
 
 int
 used_pages(void)
 {
-  return total_pages() - used_pages_counter;
+  return total_pages() - free_pages();
 }
 
 // Initialization happens in two phases.
@@ -95,6 +105,7 @@ kinit1(void *vstart, void *vend)
 {
   initlock(&kmem.lock, "kmem");
   kmem.use_lock = 0;
+  kmem.free_pages = 0;
   freerange(vstart, vend);
 }
 
@@ -112,7 +123,7 @@ freerange(void *vstart, void *vend)
   char *p;
   p = (char*)PGROUNDUP((uint)vstart);
   for(; p + PGSIZE <= (char*)vend; p += PGSIZE) {
-    kmem.references_count[V2P(p) >> PTXSHIFT] = 0;
+    kmem.references_count[V2P(p) >> PGSHIFT] = 0;
     kfree(p);
   }
 }
@@ -132,12 +143,13 @@ kfree(char *v)
   if(kmem.use_lock)
     acquire(&kmem.lock);
 
-  if (kmem.references_count[V2P(v) >> PTXSHIFT] > 0) {
-    kmem.references_count[V2P(v) >> PTXSHIFT] --;
-    // cprintf("kfree: [%x]: (refs:%d)\n", v, kmem.references_count[V2P(v) >> PTXSHIFT]);
+  if (kmem.references_count[V2P(v) >> PGSHIFT] > 0) {
+    kmem.references_count[V2P(v) >> PGSHIFT] --;
+    // cprintf("kfree: [%x]: (refs:%d)\n", v, kmem.references_count[V2P(v) >> PGSHIFT]);
   }
+  kmem.free_pages++;
 
-  if (kmem.references_count[V2P(v) >> PTXSHIFT] != 0) {
+  if (kmem.references_count[V2P(v) >> PGSHIFT] != 0) {
     if(kmem.use_lock)
       release(&kmem.lock);
     return;
@@ -148,7 +160,7 @@ kfree(char *v)
   r = (struct run*)v;
   r->next = kmem.freelist;
   kmem.freelist = r;
-  used_pages_counter ++;
+  // used_pages_counter ++;
   if(kmem.use_lock)
     release(&kmem.lock);
 }
@@ -168,8 +180,9 @@ kalloc(void)
   r = kmem.freelist;
   if(r) {
     kmem.freelist = r->next;
-    kmem.references_count[V2P(r) >> PTXSHIFT] = 1;
-    used_pages_counter --;
+    kmem.references_count[V2P(r) >> PGSHIFT] = 1;
+    kmem.free_pages--;
+    // used_pages_counter --;
   }
 
   if(kmem.use_lock)

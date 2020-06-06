@@ -12,6 +12,10 @@
 #define FILESIZE 1
 #define BUFF_SIZE (PGSIZE * (MAX_TOTAL_PAGES - GROWPROC_PGS - FILESIZE))
 
+void print_free_pages_status() {
+  printf(1, "%d / %d pages used\n", get_used_pages(), get_total_pages());
+}
+
 void test_number_of_pages(int expected) {
   int actual = getNumberOfFreePages();
   printf(1,"free pages test: ");
@@ -29,20 +33,19 @@ void test_number_of_page_faults(int expected, int is_child) {
   printf(1,"pages faults test: ");
   if (actual == expected) {
     printf(1, "SUCCESS\n");
-    printf(1, "(total pages faults: %d)\n", page_faults());
+    // printf(1, "(total pages faults: %d)\n", page_faults());
   }
   else {
     printf(1, "FAILURE\nexpected: %d\nactual: %d\n", expected, actual);
   }
 }
 
-
 void swap_test(){
-  int i, j1, j2, res = 1, expected_free_pages, num_of_pf_before , num_of_free_pages_before;
+  int i, j1, j2, res = 1, num_of_pf_before , num_of_free_pages_before;
   printf(1, "==================================\n");
   printf(1, "Started swap and cow test\n\n");
   printf(1,"free pages: %d\n", num_of_free_pages_before = getNumberOfFreePages());
-  printf(1,"used pages: %d\n", get_used_pages());
+  print_free_pages_status();
 
   char *buffer;
   char *expected_res_parent_1 = "11111111111111111111111111111111111111111111111111";
@@ -110,12 +113,11 @@ void swap_test(){
       printf(1, "[parent]: FAILURE:\nexpected: %s\nactual: %s\n", expected_res_parent_2, &buffer[j2]);
     }
     free(buffer);
-    printf(1, "[parent]: total page faults: %d\n", page_faults());
+    // printf(1, "[parent]: total page faults: %d\n", page_faults());
     printf(1, "[parent]: result: %s\n", res ? "SUCCESS" : "FAILURE");
   }
 
-  expected_free_pages = num_of_free_pages_before - IGNORE_PGS;
-  test_number_of_pages(expected_free_pages);
+  test_number_of_pages(num_of_free_pages_before);
 
   printf(1, "==================================\n");
 }
@@ -133,6 +135,62 @@ void seg_fault_test(){
   printf(1, "test failed! should panic seg fault\n");
   printf(1, "==================================\n");
 }
+
+int global_var = 1;
+
+void cow_test() {
+  int pid, parent_change = 5, child_change = 6;
+  printf(1, "==================================\n");
+  printf(1, "Started cow test\n\n");
+  print_free_pages_status();
+  printf(1, "allocating buffer with size: %d\n", BUFF_SIZE);
+  char *buffer = malloc(BUFF_SIZE);
+  buffer[0] = 0;
+  print_free_pages_status();
+  pid = fork();
+  if (pid > 0) { // parent
+    wait();
+    printf(1, "[parent] changing global var from (%d) to (%d)\n", global_var, parent_change);
+    global_var = parent_change;
+    printf(1, "[parent] global var: (%d)\n", global_var);
+    printf(1, "[panret] ");
+    print_free_pages_status();
+  } 
+  else { // child
+    printf(1, "[child] changing global var from (%d) to (%d)\n", global_var, child_change);
+    global_var = child_change;
+    printf(1, "[child] global var: (%d)\n", global_var);
+    printf(1, "[child] ");
+    print_free_pages_status();
+    exit();
+  }
+}
+
+int x = 3;
+void cow_test2() {
+  int pid;
+  pid = fork();
+  if (pid == 0)
+  {
+    printf(1, "Number of free pages in child 1 before changing variable are: %d\n", getNumberOfFreePages());
+    x = 4;
+    printf(1, "Number of free pages in child 1 after changing variable are: %d\n", getNumberOfFreePages());
+  }
+  else {
+    wait();
+    pid = fork();
+    if (pid == 0) {
+      printf(1, "Number of free pages in child 2 before changing variable are: %d\n", getNumberOfFreePages());
+      x = 4;
+      printf(1, "Number of free pages in child 2 after changing variable are: %d\n", getNumberOfFreePages());
+    }
+    else {
+      printf(1, "Number of free pages in parent are: %d\n", getNumberOfFreePages());
+      wait();
+    }
+  }
+}
+
 
 static unsigned long int next = 1;
 int getRandNum() {
@@ -172,8 +230,10 @@ void globalTest(){
 
 
 int main(int argc, char *argv[]){
-//   globalTest();			//for testing each policy efficiency
-  swap_test();
+  // globalTest();			//for testing each policy efficiency // todo: fix
+  // swap_test();
   // seg_fault_test();
+  // cow_test();
+  // cow_test2();   //todo: remove
   exit();
 }
