@@ -164,32 +164,6 @@ void cow_test() {
   }
 }
 
-int x = 3;
-void cow_test2() {
-  int pid;
-  pid = fork();
-  if (pid == 0)
-  {
-    printf(1, "Number of free pages in child 1 before changing variable are: %d\n", getNumberOfFreePages());
-    x = 4;
-    printf(1, "Number of free pages in child 1 after changing variable are: %d\n", getNumberOfFreePages());
-  }
-  else {
-    wait();
-    pid = fork();
-    if (pid == 0) {
-      printf(1, "Number of free pages in child 2 before changing variable are: %d\n", getNumberOfFreePages());
-      x = 4;
-      printf(1, "Number of free pages in child 2 after changing variable are: %d\n", getNumberOfFreePages());
-    }
-    else {
-      printf(1, "Number of free pages in parent are: %d\n", getNumberOfFreePages());
-      wait();
-    }
-  }
-}
-
-
 static unsigned long int next = 1;
 int getRandNum() {
   next = next * 1103515245 + 12341;
@@ -198,10 +172,8 @@ int getRandNum() {
 
 
 int main(int argc, char *argv[]){
-  globalTest();			//for testing each policy efficiency // todo: fix
-  // swap_test();
+  swap_test();
   // seg_fault_test();
   // cow_test();
-  // cow_test2();   //todo: remove
   exit();
 }
