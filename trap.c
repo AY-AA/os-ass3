@@ -79,13 +79,20 @@ trap(struct trapframe *tf)
     break;
   case T_PGFLT:
     if (check_policy()) {
+      
+      #if NFUA || LAPA
+        NFUA_update_age();
+      #elif AQ
+        AQ_update_queue();
+      #endif
+
       if (myproc()->pid > 2 && handle_pf())
         break;
       else if (handle_cow())
         break;
       else if (myproc()->pid > 2)
         panic("trap: segmentation fault\n");
-      break;
+      // break;
     }
   //PAGEBREAK: 13
   default:

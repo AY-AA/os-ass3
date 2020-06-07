@@ -284,17 +284,13 @@ NFUA_update_age() {
   int i;
   pte_t *pte;
   struct proc *p = myproc();
-  // cprintf("AAAA\n");
   for(i = 0; i < MAX_PSYC_PAGES; i++) { 
     if(p->memory_pages[i].is_used) {
-      cprintf("[%d] i: %d, age before: %x\n", p->pid, i, p->memory_pages[i].age);
       p->memory_pages[i].age = p->memory_pages[i].age >> 1;       // shift right
       if ((pte = walkpgdir(p->pgdir, (char*)p->memory_pages[i].va, 0)) == 0)
         panic("NFUA: walkpgdir failed\n");
       if(*pte & PTE_A) {  // if accessed, 1 is added to MSB & accessed bit is turned off
-        cprintf("[%d] i: %d, age before: %x\n", p->pid, i, p->memory_pages[i].age);
         p->memory_pages[i].age |= NFUA_MSB;
-        // cprintf("[%d] i: %d, age after: %x\n", p->pid, i, p->memory_pages[i].age);
         *pte &= ~PTE_A;     // turn off accessed bit
       }
     }
@@ -402,12 +398,12 @@ next_i_in_mem_to_remove(struct proc *p)
   #if NFUA
     do {
       next_i = NFUA_next(p);
-      cprintf("NFUA_next: [PID: %d] i selected: %d, age: %d va: %x\n", p->pid, next_i, p->memory_pages[next_i].age, p->memory_pages[next_i].va);
+      // cprintf("NFUA_next: [PID: %d] i selected: %d, age: %x va: %x\n", p->pid, next_i, p->memory_pages[next_i].age, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #elif LAPA
     do {
       next_i = LAPA_next(p);
-      cprintf("LAPA_next: [PID: %d] i selected: %d, age: %d va: %x\n", p->pid, next_i, p->memory_pages[next_i].age, p->memory_pages[next_i].va);
+      // cprintf("LAPA_next: [PID: %d] i selected: %d, age: %x va: %x\n", p->pid, next_i, p->memory_pages[next_i].age, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #elif SCFIFO
     do {
@@ -422,7 +418,7 @@ next_i_in_mem_to_remove(struct proc *p)
   #elif RROBIN
     do {
       next_i = RROBIN_next(p);
-      cprintf("RROBIN: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
+      // cprintf("RROBIN: i selected: %d, timestamp: %d, va: %x\n", next_i, p->memory_pages[next_i].time_loaded, p->memory_pages[next_i].va);
     } while(next_i == -1);
   #endif
   if (next_i == -1)

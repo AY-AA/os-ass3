@@ -407,12 +407,6 @@ scheduler(void)
       switchuvm(p);
       p->state = RUNNING;
 
-      #if NFUA || LAPA
-        NFUA_update_age();
-      #elif AQ
-        AQ_update_queue();
-      #endif
-
       swtch(&(c->scheduler), p->context);
       switchkvm();
 
@@ -608,5 +602,5 @@ procdump(void)
     }
     cprintf("\n");
   }
-  cprintf("%d / %d free page frames in the system\n", used_pages(), total_pages());
+  cprintf("%d / %d free page frames in the system\n", free_pages(), total_pages());
 }
