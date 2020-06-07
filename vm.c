@@ -284,13 +284,17 @@ NFUA_update_age() {
   int i;
   pte_t *pte;
   struct proc *p = myproc();
-
+  // cprintf("AAAA\n");
   for(i = 0; i < MAX_PSYC_PAGES; i++) { 
     if(p->memory_pages[i].is_used) {
+      cprintf("[%d] i: %d, age before: %x\n", p->pid, i, p->memory_pages[i].age);
       p->memory_pages[i].age = p->memory_pages[i].age >> 1;       // shift right
-      pte = walkpgdir(p->pgdir, (char*)p->memory_pages[i].va, 0);
+      if ((pte = walkpgdir(p->pgdir, (char*)p->memory_pages[i].va, 0)) == 0)
+        panic("NFUA: walkpgdir failed\n");
       if(*pte & PTE_A) {  // if accessed, 1 is added to MSB & accessed bit is turned off
-        p->memory_pages[i].age = p->memory_pages[i].age | NFUA_MSB;
+        cprintf("[%d] i: %d, age before: %x\n", p->pid, i, p->memory_pages[i].age);
+        p->memory_pages[i].age |= NFUA_MSB;
+        // cprintf("[%d] i: %d, age after: %x\n", p->pid, i, p->memory_pages[i].age);
         *pte &= ~PTE_A;     // turn off accessed bit
       }
     }
@@ -301,9 +305,11 @@ int
 NFUA_next(struct proc *p)
 {
   int i, next_i = -1;
-  uint min = -1;
-  for(i = 1; i < MAX_PSYC_PAGES; i++) {
-    if(p->memory_pages[i].is_used && (p->memory_pages[i].age < min || min == -1)){
+  uint min = MAX_UINT;
+  for(i = 0; i < MAX_PSYC_PAGES; i++) {
+    // cprintf("[%d: %s] i: %d, age: %x\n", p->pid, p->memory_pages[i].is_used ? "V": "X", i, p->memory_pages[i].age);
+    if(p->memory_pages[i].is_used && p->memory_pages[i].age < min){
+      // cprintf("[%d] i: %d, age selected: %x\n", p->pid, i, p->memory_pages[i].age);
       next_i = i;
       min = p->memory_pages[i].age;
     }
@@ -316,7 +322,7 @@ LAPA_next(struct proc *p)
 {
   int i, j, next_i = -1, curr_ones = 0;
   uint min_ones = BITS_IN_UINT + 10, min_age = MAX_UINT;
-  for(i = 1; i < MAX_PSYC_PAGES; i++) {
+  for(i = 0; i < MAX_PSYC_PAGES; i++) {
     if(p->memory_pages[i].is_used){
       curr_ones = 0;
       for (j = 0; j < BITS_IN_UINT; j++) {
@@ -576,7 +582,9 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       p->memory_pages[next_free_i_mem].va = a;
       p->memory_pages[next_free_i_mem].time_loaded = p->timestamp++;
       p->memory_pages[next_free_i_mem].age = 0;
-
+      #if LAPA
+        p->memory_pages[next_free_i_mem].age = 0xFFFFFFFF;
+      #endif
     }
   }
   return newsz;
@@ -835,6 +843,9 @@ handle_pf(void)
   p->memory_pages[new_page_i_in_mem] = p->file_pages[i_of_rounded_va];
   p->file_pages[i_of_rounded_va].is_used = 0;
   p->file_pages[i_of_rounded_va].age = 0;
+  #if LAPA
+    p->memory_pages[new_page_i_in_mem].age = 0xFFFFFFFF;
+  #endif
   p->memory_pages[new_page_i_in_mem].time_loaded = p->timestamp++;
   // p->memory_pages[new_page_i_in_mem].is_used = 1;
 

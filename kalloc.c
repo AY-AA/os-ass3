@@ -29,41 +29,49 @@ struct {
 void
 set_counter(uint v, int i)
 {
-  acquire(&kmem.lock);
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
   kmem.references_count[v >> PGSHIFT] = i;
   // ((struct run*)v)->ref_count = 1;
   // cprintf("get_ref_counter : %x: %d\n",v,counter);
-  release(&kmem.lock);
+  if(kmem.use_lock)
+    release(&kmem.lock);
 }
 
 int
 get_ref_counter(uint v)
 {
   int counter;
-  acquire(&kmem.lock);
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
   counter = kmem.references_count[v >> PGSHIFT];
   // counter = ((struct run*)v)->ref_count;
   // cprintf("get_ref_counter original: %x, deref: %x, value: %d\n",v, (int)*v, kmem.references_count[(int)*v]);
-  release(&kmem.lock);
+  if(kmem.use_lock)
+    release(&kmem.lock);
   return counter;
 }
 
 void
 inc_counter(uint v)
 {
-  acquire(&kmem.lock);
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
   // cprintf("[%x] increased from: %d ", v, kmem.references_count[v >> PGSHIFT]);
   kmem.references_count[v >> PGSHIFT]++;
   // cprintf("to: %d\n", kmem.references_count[v >> PGSHIFT]);
-  release(&kmem.lock);
+  if(kmem.use_lock)
+    release(&kmem.lock);
 }
 
 void
 dec_counter(uint v)
 {
-  acquire(&kmem.lock);
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
   kmem.references_count[v >> PGSHIFT]--;
-  release(&kmem.lock);
+  if(kmem.use_lock)
+    release(&kmem.lock);
 }
 
 int

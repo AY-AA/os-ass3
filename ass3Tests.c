@@ -53,7 +53,7 @@ void swap_test(){
   char *expected_res_child_1 = "11111111111111111111111111111111111111113333333333";
   char *expected_res_child_2 = "22222222222222222222222222222222222222224444444444";
   int expected_pf_child = 10;
-  // int expected_pf_parent = 5;
+  int expected_pf_parent = 5;
 
   printf(1,"allocating buffer with size: %d\n", BUFF_SIZE);
   buffer = malloc(BUFF_SIZE);
@@ -63,12 +63,10 @@ void swap_test(){
   j1 = BUFF_SIZE-900;
   j2 = BUFF_SIZE-800;
 
-  // TODO: this is a very beautiful bug we need to fix :)
-  // TODO: after running with this code, try ls twice
-  // num_of_pf_before = page_faults();
-  // for (i = 1; i <= expected_pf_parent; i++)
-  //   buffer[PGSIZE*i + 1] = '2';
-  // test_number_of_page_faults(num_of_pf_before + expected_pf_parent, 0);
+  num_of_pf_before = page_faults();
+  for (i = 1; i <= expected_pf_parent; i++)
+    buffer[PGSIZE*i + 1] = '2';
+  test_number_of_page_faults(num_of_pf_before + expected_pf_parent, 0);
 
   for (i = 0; i < 50; i++) { 
     buffer[j1 + i] = '1';
@@ -198,39 +196,9 @@ int getRandNum() {
   return (unsigned int)(next/65536) % BUFF_SIZE;
 }
 
-#define PAGE_NUM(addr) ((uint)(addr) & ~0xFFF)
-#define TEST_POOL 500
-/*
-Global Test:
-Allocates 17 pages (1 code, 1 space, 1 stack, 14 malloc)
-Using pseudoRNG to access a single cell in the array and put a number in it.
-Idea behind the algorithm:
-	Space page will be swapped out sooner or later with scfifo or lap.
-	Since no one calls the space page, an extra page is needed to play with swapping (hence the #17).
-	We selected a single page and reduced its page calls to see if scfifo and lap will become more efficient.
-Results (for TEST_POOL = 500):
-LIFO: 42 Page faults
-LAP: 18 Page faults
-SCFIFO: 35 Page faults
-*/
-void globalTest(){
-	char * arr;
-	int i;
-	int randNum;
-	arr = malloc(BUFF_SIZE); //allocates 14 pages (sums to 17 - to allow more then one swapping in scfifo)
-	for (i = 0; i < TEST_POOL; i++) {
-		randNum = getRandNum();	//generates a pseudo random number between 0 and ARR_SIZE
-		while (PGSIZE*10-8 < randNum && randNum < PGSIZE*10+PGSIZE/2-8)
-			randNum = getRandNum(); //gives page #13 50% less chance of being selected
-															//(redraw number if randNum is in the first half of page #13)
-		arr[randNum] = 'X';				//write to memory
-	}
-	free(arr);
-}
-
 
 int main(int argc, char *argv[]){
-  // globalTest();			//for testing each policy efficiency // todo: fix
+  globalTest();			//for testing each policy efficiency // todo: fix
   // swap_test();
   // seg_fault_test();
   // cow_test();
